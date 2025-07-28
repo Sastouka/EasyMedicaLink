@@ -472,6 +472,34 @@ login_template = """
   <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>
   <script src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'></script>
   <script>
+    let deferredPrompt; // Variable pour stocker l'événement
+
+    // Intercepter l'événement beforeinstallprompt
+    window.addEventListener('beforeinstallprompt', (e) => {
+      // Empêcher la mini-bannière par défaut de Chrome
+      e.preventDefault();
+      // Stocker l'événement pour qu'il puisse être déclenché plus tard.
+      deferredPrompt = e;
+      console.log('beforeinstallprompt event fired');
+
+      // Déclencher l'invite d'installation automatiquement après un court délai
+      // pour permettre au DOM de se charger et à l'utilisateur de voir la page.
+      setTimeout(() => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt(); // Afficher l'invite d'installation native du navigateur
+          // Suivre le choix de l'utilisateur (facultatif)
+          deferredPrompt.userChoice.then((choiceResult) => {
+            if (choiceResult.outcome === 'accepted') {
+              console.log('L\'utilisateur a accepté l\'installation de la PWA');
+            } else {
+              console.log('L\'utilisateur a refusé l\'installation de la PWA');
+            }
+            deferredPrompt = null; // Réinitialiser l'événement une fois utilisé
+          });
+        }
+      }, 1500); // Délai de 1.5 seconde (ajustez si nécessaire)
+    });
+
     // Animation au chargement
     document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.animate__animated').forEach(el => {
@@ -483,7 +511,7 @@ login_template = """
     // Génération des QR codes
     new QRious({
       element: document.getElementById('qrLocal'),
-      value: 'https://easymedicalink-demo.onrender.com/',
+      value: 'https://easymedicalink.onrender.com/',
       size: 120,
       foreground: '#1a73e8'
     });

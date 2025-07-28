@@ -1,4 +1,4 @@
-# --- pwa.py (mis à jour) ---
+# --- pwa.py (mis à jour - corrections d'erreurs) ---
 # Ajout d'un alias pour service-worker.js afin de résoudre le 404
 from flask import (
     Blueprint, url_for, make_response,
@@ -74,23 +74,27 @@ def sw():
         'https://cdn.tailwindcss.com',
     ]
     # Étendre avec les URLs définies dans app.py pour le mode hors ligne
-    # Assurer que les URLs sont uniques et correctement formatées en JSON pour JavaScript
+    # Assurer que les URLs sont uniques
     all_urls = list(set(urls + current_app.config.get("PWA_OFFLINE_URLS", [])))
-    precache_urls_json = json.dumps(all_urls)
+    
+    # Sérialiser la liste des URLs en une chaîne JSON valide pour JavaScript
+    # Nous allons la passer comme une chaîne et la "parser" dans le SW.
+    precache_urls_js_string = json.dumps(all_urls, ensure_ascii=False)
 
     sw_code = f"""
 // sw.js - Service Worker pour EasyMedicaLink PWA
 
 // Nom du cache pour cette version du Service Worker
 // Changez cette version si vous modifiez les assets à pré-cacher
-const CACHE_NAME = 'easymedicalink-cache-v1.0.2'; // Version incrémentée pour forcer la mise à jour
+const CACHE_NAME = 'easymedicalink-cache-v1.0.4'; // Version incrémentée pour forcer la mise à jour
 
 // Liste des URLs à pré-cacher lors de l'installation du Service Worker
 // Ces URLs sont définies dans app.py et passées au template pwa_head()
 // Assurez-vous que toutes les ressources critiques sont listées ici.
 // Les URLs dynamiques (comme /patient_rdv/...) ne peuvent pas être pré-cachées
 // de cette manière et seront gérées par la stratégie de cache au runtime.
-const urlsToCache = {precache_urls_json};
+// Nous utilisons JSON.parse pour garantir un tableau JavaScript valide.
+const urlsToCache = JSON.parse('{precache_urls_js_string}');
 
 // -----------------------------------------------------------------------------
 // Événement 'install' : Se déclenche lorsque le Service Worker est installé
