@@ -1,4 +1,4 @@
-# --- pwa.py (mis à jour - corrections d'erreurs) ---
+# --- pwa.py (mise à jour complète pour éviter les erreurs PWA) ---
 # Ajout d'un alias pour service-worker.js afin de résoudre le 404
 from flask import (
     Blueprint, url_for, make_response,
@@ -30,15 +30,61 @@ def _manifest():
         "theme_color":      "#1a73e8",
         "background_color": "#ffffff",
         "icons": [
+            # Déclaration de toutes les tailles courantes.
+            # Le navigateur choisira la meilleure disponible.
+            # Idéalement, ces fichiers devraient exister avec les dimensions exactes.
+            # Sinon, le navigateur redimensionnera icon-192 ou icon-512.
             {
-                "src":   url_for("pwa_bp.pwa_icon", filename="icon-192.png"),
-                "sizes": "192x192",
-                "type":  "image/png"
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-48.png"),
+                "sizes": "48x48",
+                "type": "image/png"
             },
             {
-                "src":   url_for("pwa_bp.pwa_icon", filename="icon-512.png"),
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-72.png"),
+                "sizes": "72x72",
+                "type": "image/png"
+            },
+            {
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-96.png"),
+                "sizes": "96x96",
+                "type": "image/png"
+            },
+            {
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-128.png"),
+                "sizes": "128x128",
+                "type": "image/png"
+            },
+            {
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-144.png"),
+                "sizes": "144x144",
+                "type": "image/png"
+            },
+            {
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-152.png"),
+                "sizes": "152x152",
+                "type": "image/png"
+            },
+            {
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-192.png"),
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable" # Ajout purpose aux icônes principales
+            },
+            {
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-256.png"),
+                "sizes": "256x256",
+                "type": "image/png"
+            },
+            {
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-384.png"),
+                "sizes": "384x384",
+                "type": "image/png"
+            },
+            {
+                "src": url_for("pwa_bp.pwa_icon", filename="icon-512.png"),
                 "sizes": "512x512",
-                "type":  "image/png"
+                "type": "image/png",
+                "purpose": "any maskable" # Ajout purpose aux icônes principales
             }
         ]
     }
@@ -49,7 +95,9 @@ def manifest():
         json.dumps(_manifest(), ensure_ascii=False, separators=(",", ":"))
     )
     resp.headers["Content-Type"] = "application/manifest+json"
-    resp.cache_control.max_age = 86400
+    # Utiliser no-cache pour le manifeste pendant le développement
+    # Ceci garantira que les changements du manifeste sont toujours immédiatement récupérés.
+    resp.cache_control.no_cache = True
     return resp
 
 @pwa_bp.route("/sw.js")
@@ -58,7 +106,16 @@ def sw():
     urls = [
         url_for("pwa_bp.manifest"),
         url_for("pwa_bp.sw"),
+        # Ajout de toutes les icônes supplémentaires pour le pré-caching
+        url_for("pwa_bp.pwa_icon", filename="icon-48.png"),
+        url_for("pwa_bp.pwa_icon", filename="icon-72.png"),
+        url_for("pwa_bp.pwa_icon", filename="icon-96.png"),
+        url_for("pwa_bp.pwa_icon", filename="icon-128.png"),
+        url_for("pwa_bp.pwa_icon", filename="icon-144.png"),
+        url_for("pwa_bp.pwa_icon", filename="icon-152.png"),
         url_for("pwa_bp.pwa_icon", filename="icon-192.png"),
+        url_for("pwa_bp.pwa_icon", filename="icon-256.png"),
+        url_for("pwa_bp.pwa_icon", filename="icon-384.png"),
         url_for("pwa_bp.pwa_icon", filename="icon-512.png"),
         "/",
         "/login",
@@ -74,7 +131,6 @@ def sw():
         'https://cdn.tailwindcss.com',
     ]
     # Étendre avec les URLs définies dans app.py pour le mode hors ligne
-    # Assurer que les URLs sont uniques
     all_urls = list(set(urls + current_app.config.get("PWA_OFFLINE_URLS", [])))
     
     # Sérialiser la liste des URLs en une chaîne JSON valide pour JavaScript
@@ -86,7 +142,7 @@ def sw():
 
 // Nom du cache pour cette version du Service Worker
 // Changez cette version si vous modifiez les assets à pré-cacher
-const CACHE_NAME = 'easymedicalink-cache-v1.0.4'; // Version incrémentée pour forcer la mise à jour
+const CACHE_NAME = 'easymedicalink-cache-v1.0.7'; // Version incrémentée pour forcer la mise à jour
 
 // Liste des URLs à pré-cacher lors de l'installation du Service Worker
 // Ces URLs sont définies dans app.py et passées au template pwa_head()
@@ -163,6 +219,7 @@ self.addEventListener('fetch', (event) => {{
             return fetch(event.request)
                 .then((networkResponse) => {{
                     // Vérifier si la réponse est valide avant de la mettre en cache
+                    // type 'basic' exclut les réponses opaques (cross-origin sans CORS)
                     if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {{
                         return networkResponse;
                     }}
@@ -238,17 +295,18 @@ self.addEventListener('sync', (event) => {{
 """
     resp = make_response(sw_code, 200)
     resp.headers["Content-Type"] = "text/javascript"
-    resp.cache_control.no_cache = True
+    resp.cache_control.no_cache = True # Ne pas cacher le Service Worker lui-même
     return resp
 
-# Alias pour service-worker.js
-@pwa_bp.route("/service-worker.js")
-def service_worker():
-    return sw()
+# Suppression de la route alias /service-worker.js pour éviter les redirections.
+# @pwa_bp.route("/service-worker.js")
+# def service_worker():
+#     return sw()
 
 @pwa_bp.route("/icon/<path:filename>")
 def pwa_icon(filename):
-    return send_from_directory(ICON_DIR, filename)
+    # Assurez-vous que l'en-tête Content-Type est correct pour les images
+    return send_from_directory(ICON_DIR, filename, mimetype='image/png')
 
 @pwa_bp.app_context_processor
 def inject_pwa():
@@ -261,6 +319,7 @@ def inject_pwa():
 <meta name="mobile-web-app-capable" content="yes">
 <script>
   if ('serviceWorker' in navigator) {{
+    // IMPORTANT : Pointer directement vers pwa_bp.sw (qui correspond à /sw.js)
     navigator.serviceWorker.register('{url_for('pwa_bp.sw')}', {{ scope: '/' }})
       .then(() => console.log('Service Worker enregistré'))
       .catch(err => console.error('Erreur d’enregistrement SW:', err));
