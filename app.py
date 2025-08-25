@@ -1,147 +1,223 @@
 import os
 import webbrowser
-from flask import Flask, session, redirect, url_for, request, render_template, render_template_string
+# MODIFIÉ : Importation spécifique pour le blueprint et la base de données de l'assistant IA
+from ia_assitant import ia_assitant_bp, db as ia_db
+from flask import Flask, session, redirect, url_for, request, render_template_string, flash
+# Construire le chemin absolu vers le nouvel emplacement du dossier 'instance'
+instance_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MEDICALINK_DATA', 'instance')
+
+# Créer l'application en spécifiant le nouveau chemin
+app = Flask(__name__, instance_path=instance_folder_path)
+from datetime import timedelta
+
+# --- NOUVEAUX IMPORTS POUR FIREBASE ET LA PLANIFICATION ---
+import json
+from firebase import FirebaseManager
+from apscheduler.schedulers.background import BackgroundScheduler
+# ---------------------------------------------------------
 
 # ───────────── 1. Création de l’application
-app = Flask(
-    __name__,
-    static_folder='static',
-    static_url_path='/static',
-    template_folder='templates'
-)
-# Utiliser une clé secrète depuis les variables d'environnement
-app.secret_key = os.environ.get("SECRET_KEY", "dev")
+def create_app():
+    app = Flask(
+        __name__,
+        static_folder='static',
+        static_url_path='/static',
+        template_folder='templates'
+    )
+    # Utiliser une clé secrète depuis les variables d'environnement
+    app.secret_key = os.environ.get("SECRET_KEY", "dev")
+    app.permanent_session_lifetime = timedelta(days=7) # Les sessions durent 7 jours
+    
+    # NOUVEAU : Configuration de la base de données pour l'assistant IA
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///medical_assistant.db'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# ───────────── 2. Thèmes
-import theme
-theme.init_theme(app)
+    # NOUVEAU : Initialisation de la base de données avec l'application Flask
+    ia_db.init_app(app)
+    
+    # ───────────── 2. Thèmes
+    import theme
+    theme.init_theme(app)
 
-@app.context_processor
-def inject_theme_names():
-    return {"theme_names": list(theme.THEMES.keys())}
+    @app.context_processor
+    def inject_theme_names():
+        return {"theme_names": list(theme.THEMES.keys())}
 
-# ───────────── 3. Injection des paramètres globaux dans tous les templates
-import utils
-@app.context_processor
-def inject_config_values():
-    cfg = utils.load_config()
-    return {
-        'app_name':             cfg.get('app_name', 'EasyMedicalink'),
-        'theme':                cfg.get('theme', 'clair'),
-        'logo_path':            cfg.get('logo_path', '/static/logo.png'),
-        'background_file_path': cfg.get('background_file_path', '')
-    }
+    # ───────────── Injection des paramètres globaux dans tous les templates
+    import utils
 
-# ───────────── 4. Initialisation des utils (Excel, PDF…)
-utils.init_app(app)
-from utils import load_config, background_file as _default_bg
-cfg = load_config()
-app.background_path = cfg.get("background_file_path") or _default_bg
-import utils as _u; _u.background_file = app.background_path  # synchronisation
+    @app.context_processor
+    def inject_config_values():
+        cfg = utils.load_config()
+        return {
+            'app_name':             cfg.get('app_name', 'EasyMedicalink'),
+            'theme':                cfg.get('theme', 'clair'),
+            'logo_path':            cfg.get('logo_path', '/static/pwa/icon-512.png'),
+            'background_file_path': cfg.get('background_file_path', '')
+        }
 
-# ───────────── 5. Activation (middleware + routes)
-from activation import init_app as init_activation, register_routes as register_activation_routes
-init_activation(app)
-register_activation_routes(app)
+    # ───────────── Enregistrement des Blueprints
+    import pwa
+    import login
+    import accueil
+    import administrateur
+    import rdv
+    import facturation
+    import statistique
+    import developpeur
+    import routes 
+    import activation 
+    import patient_rdv
+    import biologie
+    import radiologie
+    import pharmacie
+    import comptabilite
+    import gestion_patient
+    import guide
 
-# ───────────── 6. Enregistrement des Blueprints
-from pwa import pwa_bp
-from login import login_bp
-from accueil import accueil_bp
-from administrateur import administrateur_bp
-from rdv import rdv_bp
-from facturation import facturation_bp
-from statistique import statistique_bp
-from developpeur import developpeur_bp
-from routes import register_routes
+    # Enregistrer les Blueprints
+    app.register_blueprint(pwa.pwa_bp)
+    app.register_blueprint(guide.guide_bp)
+    app.register_blueprint(login.login_bp)
+    app.register_blueprint(accueil.accueil_bp)
+    app.register_blueprint(administrateur.administrateur_bp)
+    app.register_blueprint(developpeur.developpeur_bp)
+    app.register_blueprint(rdv.rdv_bp, url_prefix="/rdv")
+    app.register_blueprint(facturation.facturation_bp)
+    app.register_blueprint(statistique.statistique_bp, url_prefix="/statistique")
+    app.register_blueprint(activation.activation_bp)
+    app.register_blueprint(patient_rdv.patient_rdv_bp)
+    app.register_blueprint(biologie.biologie_bp)
+    app.register_blueprint(radiologie.radiologie_bp)
+    app.register_blueprint(pharmacie.pharmacie_bp)
+    app.register_blueprint(comptabilite.comptabilite_bp)
+    app.register_blueprint(gestion_patient.gestion_patient_bp, url_prefix='/gestion_patient')
+    # MODIFIÉ : Utilisation de la variable importée directement
+    app.register_blueprint(ia_assitant_bp) 
 
-# PWA en premier
-app.register_blueprint(pwa_bp)
-app.register_blueprint(login_bp)
-app.register_blueprint(accueil_bp)
-app.register_blueprint(administrateur_bp)
-app.register_blueprint(developpeur_bp)
-app.register_blueprint(rdv_bp, url_prefix="/rdv")
-app.register_blueprint(facturation_bp)
-app.register_blueprint(statistique_bp, url_prefix="/statistique")
+    # ───────────── 7. Route racine
+    @app.route("/", methods=["GET"])
+    def root():
+        return redirect(url_for("login.login")) if "email" not in session else redirect(url_for("accueil.accueil"))
 
-# ───────────── 7. Route racine
-@app.route("/", methods=["GET"])
-def root():
-    # Si non connecté, redirige vers login ; sinon vers accueil
-    return redirect(url_for("login.login")) if "email" not in session else redirect(url_for("accueil.accueil"))
+    # ───────────── 8. Configuration des chemins dynamiques par administrateur
+    @app.before_request
+    def set_dynamic_paths_for_current_admin():
+        admin_email = session.get('admin_email', 'default_admin@example.com')
+        # print(f"DEBUG: L'application utilise le répertoire de données pour : {admin_email}") # Décommenter pour debug
 
-# ───────────── 8. Sécurisation des routes
-@app.before_request
-def require_login():
-    allowed = {
-        # PWA assets
-        "pwa_bp.manifest", "pwa_bp.sw", "pwa_bp.pwa_icon",
-        # Public / auth
-        "root", "static",
-        "login.login", "login.register", "login.forgot_password", "login.reset_password",
-        # Activation & PayPal
-        "activation", "trial_expired", "paypal_success", "paypal_cancel", "purchase_plan", "admin",
-        # Accueil
-        "accueil.accueil",
-        # Admin module
-        "administrateur_bp.dashboard", "administrateur_bp.create_user",
-        "administrateur_bp.toggle_active", "administrateur_bp.delete_user",
-        # Développeur
-        "developpeur_bp.dashboard", "developpeur_bp.create_admin",
-        "developpeur_bp.toggle_active", "developpeur_bp.delete_admin", "developpeur_bp.gen_custom",
-        # RDV
-        "rdv.rdv_home", "rdv.delete_rdv", "rdv.consult_rdv", "rdv.pdf_today",
-        # Facturation
-        "facturation.facturation_home", "facturation.download_invoice",
-        "facturation.generate_invoice", "facturation.delete_invoice", "facturation.generate_report",
-        # Statistique
-        "statistique.stats_home",
-        # Page hors-ligne
-        "offline"
-    }
-    if request.endpoint not in allowed and "email" not in session:
-        return redirect(url_for("login.login"))
+        utils.set_dynamic_base_dir(admin_email)
+        rdv.set_rdv_dirs()
+        admin_email_prefix_for_patient_rdv = admin_email.split('@')[0]
+        patient_rdv.set_patient_rdv_dirs()
 
-# ───────────── 9. Autres petites routes
-register_routes(app)
+        utils.init_app(app)
+        utils.load_patient_data()
 
-# ───────────── 10. Configuration PWA hors-ligne
-with app.app_context():
-    offline_urls = [
-        rule.rule for rule in app.url_map.iter_rules()
-        if "GET" in rule.methods and "<" not in rule.rule and not rule.rule.startswith("/static")
-    ]
-    offline_urls.append('/offline')
-    app.config['PWA_OFFLINE_URLS'] = offline_urls
+    # ───────────── 9. Intégration du middleware de sécurité
+    activation.init_app(app)
 
-# ───────────── 11. Page de secours hors-ligne
-@app.route("/offline")
-def offline():
-    return render_template_string("""
+    # ───────────── 10. Autres petites routes
+    routes.register_routes(app)
+
+    # ───────────── 11. Configuration PWA hors-ligne
+    with app.app_context():
+        offline_urls = []
+        for rule in app.url_map.iter_rules():
+            if "GET" in rule.methods and not ("<" in rule.rule or rule.rule.startswith("/static")):
+                try:
+                    url = url_for(rule.endpoint)
+                    offline_urls.append(url)
+                except Exception:
+                    pass
+        
+        offline_urls.extend([
+            '/offline', '/login', '/register', '/forgot_password',
+            '/reset_password', '/activation', '/paypal_success', '/paypal_cancel',
+            '/patient_rdv/', '/gestion_patient/'
+        ])
+        
+        app.config['PWA_OFFLINE_URLS'] = list(set(offline_urls))
+        # print(f"URLs hors ligne PWA définies : {app.config['PWA_OFFLINE_URLS']}") # Décommenter pour debug
+
+    # ───────────── 12. Page de secours hors-ligne
+    @app.route("/offline")
+    def offline():
+        return render_template_string("""
 <!DOCTYPE html>
 <html lang="fr">
   {{ pwa_head()|safe }}
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hors-ligne</title>
-  <style>
-    body { display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;margin:0;font-family:sans-serif;background:#f0f0f0;color:#333; }
-    h1{font-size:2.5rem;margin-bottom:0.5rem;} p{font-size:1.1rem;}
-  </style>
+  <style>body{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;margin:0;font-family:sans-serif;background:#f0f0f0;color:#333;}h1{font-size:2.5rem;margin-bottom:0.5rem;}p{font-size:1.1rem;}</style>
 </head>
-<body>
-  <h1>Vous êtes hors-ligne</h1>
-  <p>Vérifiez votre connexion et réessayez plus tard.</p>
-</body>
+<body><h1>Vous êtes hors-ligne</h1><p>Vérifiez votre connexion et réessayez plus tard.</p></body>
 </html>
 """), 200
 
-# ───────────── 12. Lancement
-if __name__ == "__main__":
+    # NOUVEAU : Création des tables de la base de données si elles n'existent pas
+    with app.app_context():
+        ia_db.create_all()
+
+    print("Application Flask démarrée et Blueprints enregistrés.")
+    return app
+
+# ───────────── Initialisation de l'application pour Gunicorn
+app = create_app()
+
+# --- NOUVEAU : Initialisation de Firebase et planification de la sauvegarde ---
+
+# 1. Initialisation du FirebaseManager
+credentials_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'firebase_credentials.json')
+project_id = ""
+if os.path.exists(credentials_path):
+    with open(credentials_path, 'r') as f:
+        creds = json.load(f)
+        project_id = creds.get('project_id')
+
+firebase_manager = None
+if project_id:
+    firebase_manager = FirebaseManager(credentials_path, project_id)
+else:
+    print("🔥 ATTENTION: ID de projet Firebase non trouvé ou fichier de crédentials manquant. Le module Firebase est désactivé.")
+
+# 2. Rendre le manager accessible depuis l'objet app (pour les routes)
+app.firebase_manager = firebase_manager
+
+# 3. Fonction de sauvegarde à exécuter par le planificateur
+def daily_backup_task():
+    """
+    Tâche qui compresse et téléverse le dossier MEDICALINK_DATA vers Firebase.
+    """
+    print(f"🚀 [BACKUP] Démarrage de la tâche de sauvegarde quotidienne à {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
+    # Le chemin vers le dossier parent de toutes les données
+    data_root_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MEDICALINK_DATA")
+    
+    if firebase_manager and os.path.exists(data_root_path):
+        # On sauvegarde le dossier MEDICALINK_DATA en entier dans un dossier "daily_backups" sur Firebase
+        success = firebase_manager.backup_directory(data_root_path, remote_folder="daily_backups")
+        if success:
+            print("✅ [BACKUP] Tâche de sauvegarde quotidienne terminée avec succès.")
+        else:
+            print("🔥 [BACKUP] La tâche de sauvegarde quotidienne a échoué.")
+    else:
+        print("ℹ️ [BACKUP] Le gestionnaire Firebase n'est pas initialisé ou le dossier MEDICALINK_DATA n'existe pas. Sauvegarde annulée.")
+
+# 4. Planification de la tâche
+scheduler = BackgroundScheduler(daemon=True)
+# Exécute la tâche tous les jours à minuit (00:00)
+scheduler.add_job(daily_backup_task, 'cron', hour=0, minute=0)
+scheduler.start()
+print("🗓️ Tâche de sauvegarde quotidienne planifiée pour s'exécuter tous les jours à minuit.")
+# --- FIN DES AJOUTS ---
+
+
+# ───────────── 13. Lancement pour le développement local
+if __name__ == '__main__':
     try:
-        webbrowser.open("http://127.0.0.1:3000/login")
-    except:
-        pass
+        if os.environ.get("FLASK_ENV") != "production" and not os.environ.get("REPL_SLUG"):
+             webbrowser.open("http://127.0.0.1:3000/login")
+    except Exception as e:
+        print(f"Impossible d'ouvrir le navigateur web : {e}")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))

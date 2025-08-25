@@ -3,3 +3,13 @@ __pycache__/
 .env
 instance/
 *.xlsx        # si vous ne voulez pas versionner certains Excel
+# Ignorer le dossier des données sensibles/volumineuses
+MEDICALINK_DATA/
+
+# Ignorer le fichier BFG (outil de nettoyage)
+bfg-1.14.0.jar
+
+# Fichiers de configuration sensibles
+firebase_credentials.json
+
+
