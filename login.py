@@ -306,23 +306,6 @@ def logout():
     flash("Vous avez été déconnecté.", "info")
     return redirect(url_for('login.login'))
 
-# --- NOUVELLES ROUTES POUR LES PAGES D'INFORMATION ---
-
-@login_bp.route("/about")
-def about():
-    """Affiche la page 'À Propos'."""
-    return render_template_string(about_template)
-
-@login_bp.route("/terms")
-def terms():
-    """Affiche la page 'Conditions d'Utilisation'."""
-    return render_template_string(terms_template)
-
-@login_bp.route("/privacy")
-def privacy():
-    """Affiche la page 'Politique de Confidentialité'."""
-    return render_template_string(privacy_template)
-
 
 # --- TEMPLATES HTML ---
 login_template = '''
@@ -526,11 +509,6 @@ login_template = '''
   
   <div class="text-center mt-3 footer-links">
     <span>Développé par SastoukaDigital</span>
-    <div class="mt-1">
-        <a href="/terms">Conditions d'Utilisation</a> &middot;
-        <a href="/privacy">Politique de Confidentialité</a> &middot;
-        <a href="/about">À Propos</a>
-    </div>
   </div>
 
   <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>
@@ -634,11 +612,6 @@ register_template = '''
   </div>
   <div class="text-center mt-3 footer-links">
     <span>Développé par SastoukaDigital</span>
-    <div class="mt-1">
-        <a href="/terms">Conditions d'Utilisation</a> &middot;
-        <a href="/privacy">Politique de Confidentialité</a> &middot;
-        <a href="/about">À Propos</a>
-    </div>
   </div>
   <script>
     document.getElementById('registerForm').addEventListener('submit', function(e) {
@@ -706,11 +679,6 @@ reset_template = '''
   </div>
   <div class="text-center mt-3 footer-links">
     <span>Développé par SastoukaDigital</span>
-    <div class="mt-1">
-        <a href="/terms">Conditions d'Utilisation</a> &middot;
-        <a href="/privacy">Politique de Confidentialité</a> &middot;
-        <a href="/about">À Propos</a>
-    </div>
   </div>
 </body>
 </html>
@@ -756,179 +724,7 @@ forgot_template = '''
   </div>
   <div class="text-center mt-3 footer-links">
     <span>Développé par SastoukaDigital</span>
-    <div class="mt-1">
-        <a href="/terms">Conditions d'Utilisation</a> &middot;
-        <a href="/privacy">Politique de Confidentialité</a> &middot;
-        <a href="/about">À Propos</a>
-    </div>
   </div>
-</body>
-</html>
-'''
-
-# --- NOUVEAUX TEMPLATES POUR LES PAGES D'INFORMATION (Internationalisés) ---
-
-about_template = '''
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>À Propos - EasyMedicalink</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #f8f9fa; }
-        .content-card {
-            max-width: 800px;
-            margin: 2rem auto;
-            animation: fadeIn 0.5s ease-in-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card p-4 p-md-5 content-card">
-            <h1 class="text-center text-primary mb-4">À Propos de EasyMedicalink</h1>
-            
-            <p class="lead">
-                EasyMedicalink est une solution de gestion de cabinet médical moderne, conçue pour simplifier le quotidien des professionnels de santé à travers le monde.
-            </p>
-            
-            <h4 class="mt-4">Notre Mission</h4>
-            <p>
-                Notre mission est de fournir aux médecins, cliniques et centres de santé un outil puissant, intuitif et sécurisé pour optimiser la gestion des dossiers patients, la facturation, la prise de rendez-vous et bien plus encore. Nous croyons que la technologie doit être au service de la médecine, en libérant les praticiens des tâches administratives répétitives pour qu'ils puissent se concentrer sur l'essentiel : leurs patients.
-            </p>
-            
-            <h4 class="mt-4">Développé par SastoukaDigital</h4>
-            <p>
-                Derrière EasyMedicalink se trouve SastoukaDigital, une jeune promotrice passionnée par l'innovation et la création de solutions numériques qui ont un impact positif. Nous nous engageons à offrir un service de qualité et un support réactif à tous nos utilisateurs, où qu'ils soient.
-            </p>
-
-            <div class="text-center mt-4">
-                <a href="{{ url_for('login.login') }}" class="btn btn-outline-primary">Retour à la page de connexion</a>
-            </div>
-        </div>
-    </div>
-</body>
-</html>
-'''
-
-terms_template = '''
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conditions d'Utilisation - EasyMedicalink</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #f8f9fa; }
-        .content-card {
-            max-width: 800px;
-            margin: 2rem auto;
-        }
-        .text-danger { font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card p-4 p-md-5 content-card">
-            <h1 class="text-center mb-4">Conditions d'Utilisation</h1>
-            <p class="text-muted text-center">Dernière mise à jour : 29 août 2025</p>
-            
-            <h4 class="mt-4">1. Acceptation des conditions</h4>
-            <p>
-                En accédant et en utilisant l'application EasyMedicalink (le "Service"), vous acceptez d'être lié par les présentes Conditions d'Utilisation. Si vous n'êtes pas d'accord, veuillez ne pas utiliser le Service.
-            </p>
-            
-            <h4 class="mt-4">2. Description du Service</h4>
-            <p>
-                EasyMedicalink est une plateforme de gestion de cabinet médical qui permet de gérer les dossiers patients, les rendez-vous, la facturation et d'autres tâches administratives.
-            </p>
-            
-            <h4 class="mt-4">3. Obligations de l'utilisateur</h4>
-            <p>
-                Vous êtes responsable de la confidentialité de votre mot de passe et de votre compte. Vous êtes également responsable de toutes les activités qui se produisent sous votre compte. Vous vous engagez à utiliser le Service conformément aux lois et réglementations en vigueur dans votre juridiction, notamment en ce qui concerne la confidentialité des données médicales.
-            </p>
-            
-            <h4 class="mt-4">4. Limitation de responsabilité</h4>
-            <p>
-                SastoukaDigital ne pourra être tenu responsable des dommages directs ou indirects résultant de l'utilisation du Service. Bien que nous mettions tout en œuvre pour assurer la sécurité des données, la responsabilité finale de la sauvegarde des données incombe à l'utilisateur.
-            </p>
-            
-            <h4 class="mt-4">5. Modifications des conditions</h4>
-            <p>
-                Nous nous réservons le droit de modifier ces conditions à tout moment. Les modifications entreront en vigueur dès leur publication sur cette page.
-            </p>
-            
-            <div class="text-center mt-5">
-                <a href="{{ url_for('login.login') }}" class="btn btn-outline-primary">Retour à la page de connexion</a>
-            </div>
-        </div>
-    </div>
-</body>
-</html>
-'''
-
-privacy_template = '''
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Politique de Confidentialité - EasyMedicalink</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-     <style>
-        body { background-color: #f8f9fa; }
-        .content-card {
-            max-width: 800px;
-            margin: 2rem auto;
-        }
-        .text-danger { font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card p-4 p-md-5 content-card">
-            <h1 class="text-center mb-4">Politique de Confidentialité</h1>
-            <p class="text-muted text-center">Dernière mise à jour : 29 août 2025</p>
-
-            <h4 class="mt-4">1. Collecte de l'information</h4>
-            <p>
-                Nous collectons des informations lors de votre inscription sur notre application, notamment votre nom, votre adresse e-mail, votre numéro de téléphone et les informations relatives à votre cabinet. De plus, toutes les données que vous entrez concernant vos patients sont stockées sur nos serveurs.
-            </p>
-            
-            <h4 class="mt-4">2. Utilisation des informations</h4>
-            <p>
-                Les informations que nous collectons sont utilisées pour :
-                <ul>
-                    <li>Fournir et améliorer notre Service</li>
-                    <li>Personnaliser votre expérience</li>
-                    <li>Vous contacter concernant votre compte ou des mises à jour</li>
-                    <li>Assurer la sécurité de la plateforme</li>
-                </ul>
-                Nous ne vendrons, n'échangerons, ni ne transférerons vos informations personnelles identifiables à des tiers.
-            </p>
-
-            <h4 class="mt-4">3. Sécurité des données</h4>
-            <p>
-                Nous mettons en œuvre une variété de mesures de sécurité pour préserver la sécurité de vos informations personnelles et des données de vos patients. Cela inclut le chiffrement des données et des sauvegardes régulières.
-            </p>
-
-            <h4 class="mt-4">4. Droits de l'utilisateur</h4>
-            <p>
-                Selon votre juridiction, vous disposez de droits concernant vos données personnelles, tels que le droit d'accès, de rectification, de suppression ou de portabilité. Pour exercer ces droits, veuillez nous contacter à l'adresse e-mail fournie.
-            </p>
-            
-            <div class="text-center mt-5">
-                <a href="{{ url_for('login.login') }}" class="btn btn-outline-primary">Retour à la page de connexion</a>
-            </div>
-        </div>
-    </div>
 </body>
 </html>
 '''
