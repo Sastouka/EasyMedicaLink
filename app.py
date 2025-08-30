@@ -9,6 +9,34 @@ instance_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 
 # Créer l'application en spécifiant le nouveau chemin
 app = Flask(__name__, instance_path=instance_folder_path)
+from flask import session, request, redirect, url_for
+
+@app.before_request
+def check_user_logged_in():
+    """
+    Cette fonction s'exécute avant chaque page.
+    Elle protège l'application en redirigeant les utilisateurs non connectés.
+    """
+    
+    # La liste des pages publiques que TOUT LE MONDE peut voir
+    public_pages = [
+        'login.login',
+        'login.register',
+        'login.forgot_password',
+        'login.reset_password',
+        'static',
+        
+        # ▼▼▼ CE SONT LES LIGNES IMPORTANTES À AJOUTER ▼▼▼
+        'login.about',
+        'login.terms',
+        'login.privacy'
+        # ▲▲▲ FIN DES LIGNES À AJOUTER ▲▲▲
+    ]
+
+    # Si l'utilisateur n'est pas connecté ET que la page demandée n'est PAS publique
+    if 'email' not in session and request.endpoint not in public_pages:
+        # Alors, on le renvoie vers la page de connexion
+        return redirect(url_for('login.login'))
 from datetime import timedelta
 # --- NOUVEAUX IMPORTS POUR FIREBASE ET LA PLANIFICATION ---
 import json
