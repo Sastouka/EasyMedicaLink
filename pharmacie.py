@@ -243,15 +243,10 @@ def _add_expense_to_comptabilite(expense_data):
 class PDF(FPDF):
     def __init__(self, orientation='P', unit='mm', format='A4'):
         super().__init__(orientation, unit, format)
-        try:
-            self.add_font('Arial', '', 'C:\\Windows\\Fonts\\arial.ttf', uni=True)
-            self.add_font('Arial', 'B', 'C:\\Windows\\Fonts\\arialbd.ttf', uni=True)
-            self.add_font('Arial', 'I', 'C:\\Windows\\Fonts\\ariali.ttf', uni=True)
-            self.add_font('Arial', 'BI', 'C:\\Windows\\Fonts\\arialbi.ttf', uni=True)
-            self.font_family = 'Arial'
-        except RuntimeError:
-            print("AVERTISSEMENT: Polices Arial non trouvées, utilisation des polices FPDF par défaut (Helvetica).")
-            self.font_family = 'Helvetica'
+        # CORRECTION : On supprime la tentative de chargement des polices spécifiques à Windows.
+        # FPDF utilisera ses polices de base (ex: Helvetica, Times) qui sont universelles
+        # et garantissent que le code fonctionne sur n'importe quel système.
+        self.font_family = 'Helvetica' # Police de secours universelle et fiable
         self.title = ''
 
     def header(self):
@@ -352,7 +347,7 @@ class PDF(FPDF):
                 current_x_for_text_drawing += cell_width
             self.set_y(actual_start_y_row + max_row_height)
             self.set_x(start_x_table)
-            fill = not fill
+            fill = not fill 
 
 def generate_inventory_pdf(df, currency):
     pdf = PDF(orientation='L', unit='mm', format='A4')
