@@ -1003,8 +1003,12 @@ def generate_compta_report():
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
 
-    start_dt = datetime.strptime(start_date_str, '%Y-%m-%d') if start_date_str else None
-    end_dt = datetime.strptime(end_date_str, '%Y-%m-%d') if end_date_str else None
+    try:
+        start_dt = datetime.strptime(start_date_str, '%Y-%m-%d') if start_date_str else None
+        end_dt = datetime.strptime(end_date_str, '%Y-%m-%d') if end_date_str else None
+    except ValueError:
+        flash("Format de date invalide. Veuillez utiliser AAAA-MM-JJ.", "danger")
+        return redirect(url_for('comptabilite.home_comptabilite', _anchor="rapports-tab"))
 
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')

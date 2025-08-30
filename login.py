@@ -150,16 +150,12 @@ def login():
         if found_user_info:
             actual_role = found_user_info["actual_role"]
 
-            # --- DÉBUT DE LA MODIFICATION : Vérification du rôle ---
-            # Gère le cas spécial où le rôle 'pharmacie' est sélectionné via 'pharmacie/magasin'
             is_pharmacy_role_match = (selected_role == 'pharmacie/magasin' and actual_role == 'pharmacie')
 
             if selected_role != actual_role and not is_pharmacy_role_match:
                 flash("Le rôle sélectionné est incorrect pour cet utilisateur.", "danger")
                 return redirect(url_for('login.login'))
-            # --- FIN DE LA MODIFICATION ---
 
-            # Vérifier si le compte est actif
             if not found_user_info["user_data"].get("active", True):
                 flash(
                     "Votre compte est inactif. Veuillez contacter le propriétaire de l'application.", 
@@ -172,7 +168,6 @@ def login():
             session["admin_email"] = found_user_info["admin_owner_email"]
             session.permanent = True
 
-            # Collecte de l'ID machine pour les admins
             if session["role"] == 'admin':
                 try:
                     hw_id = get_hardware_id()
@@ -284,7 +279,6 @@ def reset_password(token):
 
 @login_bp.route('/change_password', methods=['GET', 'POST'])
 def change_password():
-    """Route pour que l'utilisateur connecté change son propre mot de passe."""
     if 'email' not in session:
         flash('Vous devez être connecté pour changer votre mot de passe.', 'warning')
         return redirect(url_for('login.login'))
@@ -300,11 +294,11 @@ def change_password():
                 users[session['email']]['password'] = hash_password(pwd)
                 save_users(users)
                 flash('Mot de passe mis à jour avec succès.', 'success')
-                return redirect(url_for('accueil.accueil')) # Redirige vers l'accueil après succès
+                return redirect(url_for('accueil.accueil'))
             else:
                 flash('Utilisateur non trouvé.', 'danger')
 
-    return render_template_string(reset_template) # Réutilise le template de réinitialisation
+    return render_template_string(reset_template)
 
 @login_bp.route('/logout')
 def logout():
@@ -312,15 +306,31 @@ def logout():
     flash("Vous avez été déconnecté.", "info")
     return redirect(url_for('login.login'))
 
-# ────────────────────────────────────────────────────────────────────────────
-# TEMPLATES (inchangés, car ils sont définis dans templates.py et utilisés via render_template_string)
-# ────────────────────────────────────────────────────────────────────────────
+# --- NOUVELLES ROUTES POUR LES PAGES D'INFORMATION ---
+
+@login_bp.route("/about")
+def about():
+    """Affiche la page 'À Propos'."""
+    return render_template_string(about_template)
+
+@login_bp.route("/terms")
+def terms():
+    """Affiche la page 'Conditions d'Utilisation'."""
+    return render_template_string(terms_template)
+
+@login_bp.route("/privacy")
+def privacy():
+    """Affiche la page 'Politique de Confidentialité'."""
+    return render_template_string(privacy_template)
+
+
+# --- TEMPLATES HTML ---
 login_template = '''
 <!DOCTYPE html><html lang='fr'>
 {{ pwa_head()|safe }}
 <head>
   <meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-  <title>Connexion</title>
+  <title>Connexion - EasyMedicalink</title>
   <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>
   <link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css' rel='stylesheet'>
   <style>
@@ -335,6 +345,8 @@ login_template = '''
       align-items: center;
       justify-content: center;
       flex-direction: column;
+      padding-top: 2rem;
+      padding-bottom: 2rem;
     }
     .card {
       border-radius: 20px;
@@ -344,6 +356,7 @@ login_template = '''
       animation: fadeInUp 0.6s ease-out;
       background: rgba(255, 255, 255, 0.95);
       backdrop-filter: blur(10px);
+      max-width: 480px;
     }
     .btn-gradient {
       background: linear-gradient(45deg, #1a73e8, #0d9488);
@@ -358,21 +371,30 @@ login_template = '''
       box-shadow: 0 5px 15px rgba(26, 115, 232, 0.3);
     }
     .contact-info { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center; }
-    .signature { margin-top: 20px; text-align: center; font-size: 0.8rem; color: #777; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    
-    /* NOUVEAU : Style pour la bannière d'installation PWA */
     .pwa-install-banner {
         background-color: #e3f2fd;
         border: 1px solid #1a73e8;
         border-radius: 12px;
         padding: 1rem;
-        transition: all 0.5s ease-in-out;
+    }
+    .trust-signal h5 { font-size: 1rem; }
+    .trust-signal p { font-size: 0.85rem; }
+    .footer-links {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    .footer-links a {
+        color: #6c757d;
+        text-decoration: none;
+    }
+    .footer-links a:hover {
+        text-decoration: underline;
     }
   </style>
 </head>
 <body class='p-3'>
-  <div class='card p-4' style='max-width:420px'>
+  <div class='card p-4'>
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
 
     <h3 class='text-center mb-4 fw-bold'>
@@ -383,11 +405,9 @@ login_template = '''
         <div class="d-flex align-items-center">
             <div class="flex-grow-1">
                 <h5 class="mb-1" style="color: #1a73e8;"><i class="fas fa-rocket me-2"></i>Accès rapide</h5>
-                <p class="mb-0 small">Installez cette application sur votre appareil pour une expérience améliorée.</p>
+                <p class="mb-0 small">Installez l'application pour une meilleure expérience.</p>
             </div>
-            <button id="pwa-install-button" class="btn btn-gradient ms-3 flex-shrink-0">
-                <i class="fas fa-download me-2"></i>Installer
-            </button>
+            <button id="pwa-install-button" class="btn btn-gradient ms-3 flex-shrink-0">Installer</button>
         </div>
     </div>
 
@@ -399,7 +419,7 @@ login_template = '''
 
     <form method='POST'>
       <div class='mb-3'>
-        <label class='form-label small text-muted'><i class='fas fa-users-cog me-1' style="color: #673AB7;"></i>Rôle</label>
+        <label class='form-label small text-muted'><i class='fas fa-users-cog me-1'></i> Rôle</label>
         <select name='role_select' class='form-select form-select-lg shadow-sm'>
           <option value='admin'>Admin</option>
           <option value='medecin'>Médecin</option>
@@ -411,11 +431,11 @@ login_template = '''
         </select>
       </div>
       <div class='mb-3'>
-        <label class='form-label small text-muted'><i class='fas fa-envelope me-1' style="color: #FF5722;"></i>Email</label>
+        <label class='form-label small text-muted'><i class='fas fa-envelope me-1'></i> Email</label>
         <input name='email' type='email' class='form-control form-control-lg shadow-sm'>
       </div>
       <div class='mb-4'>
-        <label class='form-label small text-muted'><i class='fas fa-key me-1' style="color: #E91E63;"></i>Mot de passe</label>
+        <label class='form-label small text-muted'><i class='fas fa-key me-1'></i> Mot de passe</label>
         <input name='password' type='password' class='form-control form-control-lg shadow-sm'>
       </div>
       <button class='btn btn-gradient btn-lg w-100 py-3 fw-bold'>Se connecter</button>
@@ -427,25 +447,75 @@ login_template = '''
     </div>
 
     <div class='d-flex flex-column gap-2 mt-3'>
-        <a href='{{ url_for("login.register") }}' class='btn btn-outline-primary flex-fill py-2'><i class='fas fa-user-plus me-1' style="color: #00BCD4;"></i>Créer un compte</a>
-        <a href='{{ url_for("login.forgot_password") }}' class='btn btn-outline-secondary flex-fill py-2'><i class='fas fa-unlock-alt me-1' style="color: #FFC107;"></i>Récupération</a>
+        <a href='{{ url_for("login.register") }}' class='btn btn-outline-primary flex-fill py-2'><i class='fas fa-user-plus me-1'></i> Créer un compte</a>
+        <a href='{{ url_for("login.forgot_password") }}' class='btn btn-outline-secondary flex-fill py-2'><i class='fas fa-unlock-alt me-1'></i> Récupération</a>
     </div>
     
     {% if win64_filename or win32_filename %}
     <div class='text-center mt-3'>
-        <div class="alert alert-info small text-center mb-3" role="alert">
-          <i class="fas fa-desktop me-2" style="color: #007BFF;"></i>
-          Pour une expérience en version locale sur PC Windows, pensez à télécharger notre application locale.
+        <div class="alert alert-info small text-center mb-3">
+          <i class="fas fa-desktop me-2"></i>
+          Pour une expérience locale sur PC Windows, téléchargez notre application.
         <div class='d-flex gap-2 justify-content-center'>
           {% if win64_filename %}
-          <a href="{{ url_for('static', filename=win64_filename) }}" class='btn btn-gradient text-white text-decoration-none'><i class='fas fa-download me-1'></i>Windows 64-bit</a>
+          <a href="{{ url_for('static', filename=win64_filename) }}" class='btn btn-gradient text-white text-decoration-none'><i class='fas fa-download me-1'></i> Windows 64-bit</a>
           {% endif %}
           {% if win32_filename %}
-          <a href="{{ url_for('static', filename=win32_filename) }}" class='btn btn-gradient text-white text-decoration-none'><i class='fas fa-download me-1'></i>Windows 32-bit</a>
+          <a href="{{ url_for('static', filename=win32_filename) }}" class='btn btn-gradient text-white text-decoration-none'><i class='fas fa-download me-1'></i> Windows 32-bit</a>
           {% endif %}
         </div>
     </div>
     {% endif %}
+
+    <div class='mt-4 pt-4 border-top'>
+        <h4 class='text-center mb-3 fw-bold'>Nos Engagements</h4>
+        <div class='row text-center trust-signal'>
+            <div class='col-12 col-md-4 mb-3'>
+                <h5><i class='fas fa-shield-alt text-primary mb-2'></i> Sécurité</h5>
+                <p class='small text-muted'>Données chiffrées, sauvegardes quotidiennes.</p>
+            </div>
+            <div class='col-12 col-md-4 mb-3'>
+                <h5><i class='fas fa-headset text-success mb-2'></i> Support</h5>
+                <p class='small text-muted'>Profitez de l'essai gratuit et contactez-nous par Email ou WhatsApp.</p>
+            </div>
+            <div class='col-12 col-md-4 mb-3'>
+                <h5><i class='fas fa-cogs text-info mb-2'></i> Évolution</h5>
+                <p class='small text-muted'>Mises à jour régulières pour répondre à vos besoins.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class='text-center pt-3 border-top'>
+        <h4 class='text-center mb-3 fw-bold'>Recommandé par nos utilisateurs</h4>
+        <div id="testimonialCarousel" class="carousel slide" data-bs-ride="carousel">
+            <div class="carousel-inner">
+                
+                <div class="carousel-item active" data-bs-interval="5000">
+                    <div class='mb-2'>
+                        <i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i>
+                    </div>
+                    <p class='text-muted small fst-italic'>"Un outil intuitif qui a transformé la gestion de mon cabinet. Je gagne un temps précieux chaque jour !"</p>
+                    <p class="fw-bold small mb-0">- Dr. Amadou</p>
+                </div>
+
+                <div class="carousel-item" data-bs-interval="5000">
+                    <div class='mb-2'>
+                        <i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i>
+                    </div>
+                    <p class='text-muted small fst-italic'>"La fonctionnalité de facturation est simple et efficace. Mes assistantes l'adorent."</p>
+                    <p class="fw-bold small mb-0">- Dr. Fatou</p>
+                </div>
+
+                <div class="carousel-item" data-bs-interval="5000">
+                    <div class='mb-2'>
+                        <i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i>
+                    </div>
+                    <p class='text-muted small fst-italic'>"Indispensable pour le suivi de mes patients. Accessible et très complet."</p>
+                    <p class="fw-bold small mb-0">- Dr. Karim</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class='contact-info'>
         <p>Contactez-nous: sastoukadigital@gmail.com | +212652084735</p>
@@ -453,7 +523,15 @@ login_template = '''
         <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
     </div>
   </div>
-  <div class="signature">Développé par SastoukaDigital</div>
+  
+  <div class="text-center mt-3 footer-links">
+    <span>Développé par SastoukaDigital</span>
+    <div class="mt-1">
+        <a href="/terms">Conditions d'Utilisation</a> &middot;
+        <a href="/privacy">Politique de Confidentialité</a> &middot;
+        <a href="/about">À Propos</a>
+    </div>
+  </div>
 
   <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>
   <script src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'></script>
@@ -461,33 +539,24 @@ login_template = '''
     new QRious({ element: document.getElementById('qrLocal'), value: 'https://easymedicalink.onrender.com/', size: 120, foreground: '#1a73e8' });
     new QRious({ element: document.getElementById('qrLan'), value: '{{ url_lan }}', size: 120, foreground: '#0d9488' });
   </script>
-  
   <script>
     document.addEventListener('DOMContentLoaded', () => {
         let deferredPrompt;
         const installBanner = document.getElementById('pwa-install-banner');
         const installButton = document.getElementById('pwa-install-button');
-
-        // Cache la bannière par défaut
-        installBanner.classList.add('d-none');
-
-        // Ne montrer la bannière que si l'événement est déclenché ET que l'app n'est pas déjà installée
+        if (installBanner) { installBanner.classList.add('d-none'); }
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            installBanner.classList.remove('d-none');
+            if (installBanner) { installBanner.classList.remove('d-none'); }
         });
-
         if (installButton) {
             installButton.addEventListener('click', async () => {
                 if (deferredPrompt) {
                     deferredPrompt.prompt();
-                    const { outcome } = await deferredPrompt.userChoice;
-                    console.log(`User response to the install prompt: ${outcome}`);
+                    await deferredPrompt.userChoice;
                     deferredPrompt = null;
-                    if (installBanner) {
-                        installBanner.classList.add('d-none');
-                    }
+                    if (installBanner) { installBanner.classList.add('d-none'); }
                 }
             });
         }
@@ -504,152 +573,94 @@ register_template = '''
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Enregistrement</title>
+  <title>Enregistrement - EasyMedicalink</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
     .btn-medical { background: linear-gradient(45deg,#1a73e8,#0d9488); color:white; }
-    body {
-        background:#f0fafe;
-        display: flex; /* Added for centering */
-        flex-direction: column; /* Added for stacking */
-        align-items: center; /* Added for centering */
-        justify-content: center; /* Added for centering */
-        min-height: 100vh; /* Added for full viewport height */
-    }
-    .contact-info { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center; }
-    .signature { margin-top: 20px; text-align: center; font-size: 0.8rem; color: #777; }
+    body { background:#f0fafe; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .footer-links { font-size: 0.8rem; color: #6c757d; }
+    .footer-links a { color: #6c757d; text-decoration: none; }
+    .footer-links a:hover { text-decoration: underline; }
   </style>
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+<body class="d-flex flex-column align-items-center justify-content-center min-vh-100 p-3">
   <div class="card p-4 shadow w-100" style="max-width: 480px;">
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
-    <h3 class="text-center mb-3"><i class="fas fa-user-plus" style="color: #00BCD4;"></i> Enregistrement</h3>
+    <h3 class="text-center mb-3"><i class="fas fa-user-plus text-info"></i> Enregistrement</h3>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
     {% endwith %}
     <form id="registerForm" method="POST">
       <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-envelope me-2" style="color: #FF5722;"></i>Email</label>
+        <label class="form-label small"><i class="fas fa-envelope me-2"></i>Email</label>
         <input type="email" name="email" class="form-control form-control-lg" required>
       </div>
       <div class="mb-3 row g-2">
         <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-key me-2" style="color: #E91E63;"></i>Mot de passe</label>
+          <label class="form-label small"><i class="fas fa-key me-2"></i>Mot de passe</label>
           <input type="password" name="password" class="form-control form-control-lg" required>
         </div>
         <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-key me-2" style="color: #E91E63;"></i>Confirmer</label>
+          <label class="form-label small"><i class="fas fa-key me-2"></i>Confirmer</label>
           <input type="password" name="confirm" class="form-control form-control-lg" required>
         </div>
       </div>
       <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-users-cog me-2" style="color: #673AB7;"></i>Rôle</label>
-        <select name="role" class="form-select form-select-lg" required>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-      <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-hospital-symbol me-2" style="color: #000080;"></i>Nom Clinique/Cabinet</label>
+        <label class="form-label small"><i class="fas fa-hospital-symbol me-2"></i>Nom Clinique/Cabinet</label>
         <input type="text" name="clinic" class="form-control form-control-lg" required>
       </div>
       <div class="mb-3 row g-2">
         <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-calendar-alt me-2" style="color: #FF69B4;"></i>Date de création (Clinique)</label> {# Updated label #}
-          <input type="date" name="clinic_creation_date" class="form-control form-control-lg" required> {# Updated name #}
+          <label class="form-label small"><i class="fas fa-calendar-alt me-2"></i>Date de création (Clinique)</label>
+          <input type="date" name="clinic_creation_date" class="form-control form-control-lg" required>
         </div>
         <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-map-marker-alt me-2" style="color: #28A745;"></i>Adresse</label>
+          <label class="form-label small"><i class="fas fa-map-marker-alt me-2"></i>Adresse</label>
           <input type="text" name="address" class="form-control form-control-lg" required>
         </div>
       </div>
       <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-phone me-2" style="color: #17A2B8;"></i>Téléphone (Whatsapp)</label>
-        <input type="tel" name="phone" class="form-control form-control-lg" placeholder="ex :+212XXXXXXXXX" required pattern="^\\+\\d{9,}$">
-        <div class="form-text text-muted">Le numéro de téléphone doit commencer par un '+' et contenir au moins 9 chiffres.</div>
+        <label class="form-label small"><i class="fas fa-phone me-2"></i>Téléphone (Whatsapp)</label>
+        <input type="tel" name="phone" class="form-control form-control-lg" placeholder="ex: +212XXXXXXXXX" required pattern="^\\+\\d{9,}$">
       </div>
       <button type="submit" class="btn btn-medical btn-lg w-100">S'enregistrer</button>
     </form>
     <div class="text-center mt-3">
-      <a href="{{ url_for('login.login') }}" class="btn btn-outline-secondary d-inline-flex align-items-center">
-        <i class="fas fa-arrow-left me-1"></i> Retour Connexion
-      </a>
-    </div>
-    <div class='contact-info'>
-        <p>Besoin d'aide ? Contactez-nous :</p>
-        <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-info'><i class='fas fa-envelope'></i> Email</a>
-        <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
+      <a href="{{ url_for('login.login') }}" class="btn btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour Connexion</a>
     </div>
   </div>
-  <div class="signature">
-    Développé par SastoukaDigital
+  <div class="text-center mt-3 footer-links">
+    <span>Développé par SastoukaDigital</span>
+    <div class="mt-1">
+        <a href="/terms">Conditions d'Utilisation</a> &middot;
+        <a href="/privacy">Politique de Confidentialité</a> &middot;
+        <a href="/about">À Propos</a>
+    </div>
   </div>
   <script>
     document.getElementById('registerForm').addEventListener('submit', function(e) {
       e.preventDefault();
       Swal.fire({
         title: 'Important',
-        text: 'Veuillez conserver précieusement votre email, le nom de la clinique, la date de création et l’adresse. Ces informations seront nécessaires pour récupérer votre mot de passe.',
+        text: 'Veuillez conserver précieusement ces informations. Elles seront nécessaires pour récupérer votre mot de passe.',
         icon: 'info',
-        confirmButtonText: 'OK'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          this.submit();
-        }
-      });
+        confirmButtonText: 'Compris'
+      }).then((result) => { if (result.isConfirmed) { this.submit(); } });
     });
-  </script>
-  <script>
-    function copyToClipboard(text) {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        document.body.appendChild(textarea);
-        textarea.select();
-        try {
-            document.execCommand('copy');
-            Swal.fire({ icon: 'success', title: 'Copié!', text: 'Détails du compte copiés.', timer: 1500, showConfirmButton: false });
-        } catch (err) {
-            Swal.fire({ icon: 'error', title: 'Erreur!', text: 'Échec de la copie.', timer: 1500, showConfirmButton: false });
-        }
-        document.body.removeChild(textarea);
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
+    const registrationSuccess = {{ registration_success | tojson | safe }};
+    if (registrationSuccess) {
         const newUserDetails = {{ new_user_details | tojson | safe }};
-        const registrationSuccess = {{ registration_success | tojson | safe }};
-
-        if (registrationSuccess && newUserDetails) {
-            const detailsHtml = `
-                <p>Votre compte administrateur a été créé avec succès !</p>
-                <p>Veuillez conserver précieusement ces informations.</p>
-                <div style="text-align: left; background: #f0f0f0; padding: 10px; border-radius: 5px; margin-top: 15px; font-family: monospace;" id="accountDetails">
-                    <strong>Email:</strong> ${newUserDetails.email}<br>
-                    <strong>Nom Clinique:</strong> ${newUserDetails.clinic}<br>
-                    <strong>Date création:</strong> ${newUserDetails.creation_date}<br>
-                    <strong>Adresse:</strong> ${newUserDetails.address}<br>
-                    <strong>Téléphone:</strong> ${newUserDetails.phone}
-                </div>
-                <button id="copyDetailsBtn" class="swal2-confirm swal2-styled" style="margin-top: 20px;">
-                    <i class="fas fa-copy me-2"></i>Copier les détails
-                </button>
-            `;
-            Swal.fire({
-                title: 'Compte créé !',
-                icon: 'success',
-                html: detailsHtml,
-                confirmButtonText: 'OK',
-                didOpen: () => {
-                    document.getElementById('copyDetailsBtn').addEventListener('click', () => {
-                        copyToClipboard(document.getElementById('accountDetails').innerText);
-                    });
-                }
-            }).then(() => {
-                window.location.href = "{{ url_for('login.login') }}";
-            });
-        }
-    });
+        const detailsText = `Email: ${newUserDetails.email}\\nNom Clinique: ${newUserDetails.clinic}\\nDate création: ${newUserDetails.creation_date}\\nAdresse: ${newUserDetails.address}\\nTéléphone: ${newUserDetails.phone}`;
+        Swal.fire({
+            title: 'Compte créé avec succès !',
+            icon: 'success',
+            html: `<p>Veuillez conserver précieusement ces informations.</p><pre style="text-align:left;background:#f0f0f0;padding:10px;border-radius:5px;">${detailsText.replace(/\\n/g, '<br>')}</pre>`,
+            confirmButtonText: 'Aller à la connexion'
+        }).then(() => { window.location.href = "{{ url_for('login.login') }}"; });
+    }
   </script>
 </body>
 </html>
@@ -668,39 +679,38 @@ reset_template = '''
   <style>
     .btn-medical { background: linear-gradient(45deg,#1a73e8,#0d9488); color:white; }
     body { background:#f0fafe; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
-    .contact-info { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center; }
-    .signature { margin-top: 20px; text-align: center; font-size: 0.8rem; color: #777; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .footer-links { font-size: 0.8rem; color: #6c757d; }
+    .footer-links a { color: #6c757d; text-decoration: none; }
+    .footer-links a:hover { text-decoration: underline; }
   </style>
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+<body class="d-flex flex-column align-items-center justify-content-center min-vh-100 p-3">
   <div class="card p-4 shadow w-100" style="max-width: 400px;">
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
-    <h3 class="text-center mb-3"><i class="fas fa-redo-alt" style="color: #1a73e8;"></i> Réinitialiser mot de passe</h3>
+    <h3 class="text-center mb-3"><i class="fas fa-redo-alt text-primary"></i> Réinitialiser</h3>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
     {% endwith %}
     <form method="POST">
-      <div class="mb-3 row g-2">
-        <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-key me-2" style="color: #E91E63;"></i>Nouveau mot de passe</label>
+      <div class="mb-3">
+          <label class="form-label small"><i class="fas fa-key me-2"></i>Nouveau mot de passe</label>
           <input type="password" name="password" class="form-control form-control-lg" required>
-        </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-key me-2" style="color: #E91E63;"></i>Confirmer</label>
+      </div>
+      <div class="mb-3">
+          <label class="form-label small"><i class="fas fa-key me-2"></i>Confirmer</label>
           <input type="password" name="confirm" class="form-control form-control-lg" required>
-        </div>
       </div>
       <button type="submit" class="btn btn-medical btn-lg w-100">Mettre à jour</button>
     </form>
-    <div class='contact-info'>
-        <p>Besoin d'aide ? Contactez-nous :</p>
-        <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-info'><i class='fas fa-envelope'></i> Email</a>
-        <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
-    </div>
   </div>
-  <div class="signature">
-    Développé par SastoukaDigital
+  <div class="text-center mt-3 footer-links">
+    <span>Développé par SastoukaDigital</span>
+    <div class="mt-1">
+        <a href="/terms">Conditions d'Utilisation</a> &middot;
+        <a href="/privacy">Politique de Confidentialité</a> &middot;
+        <a href="/about">À Propos</a>
+    </div>
   </div>
 </body>
 </html>
@@ -719,33 +729,206 @@ forgot_template = '''
   <style>
     .btn-medical { background: linear-gradient(45deg,#1a73e8,#0d9488); color:white; }
     body { background:#f0fafe; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
-    .contact-info { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center; }
-    .signature { margin-top: 20px; text-align: center; font-size: 0.8rem; color: #777; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .footer-links { font-size: 0.8rem; color: #6c757d; }
+    .footer-links a { color: #6c757d; text-decoration: none; }
+    .footer-links a:hover { text-decoration: underline; }
   </style>
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+<body class="d-flex flex-column align-items-center justify-content-center min-vh-100 p-3">
   <div class="card p-4 shadow w-100" style="max-width: 400px;">
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
-    <h3 class="text-center mb-3"><i class="fas fa-unlock-alt" style="color: #FFC107;"></i>Récupération</h3>
+    <h3 class="text-center mb-3"><i class="fas fa-unlock-alt text-warning"></i> Récupération</h3>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
     {% endwith %}
     <form method="POST">
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-envelope me-2" style="color: #FF5722;"></i>Email</label><input type="email" name="email" class="form-control form-control-lg" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-hospital-symbol me-2" style="color: #000080;"></i>Nom Clinique</label><input type="text" name="clinic" class="form-control form-control-lg" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-calendar-alt me-2" style="color: #FF69B4;"></i>Date de création</label><input type="date" name="creation_date" class="form-control form-control-lg" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-map-marker-alt me-2" style="color: #28A745;"></i>Adresse</label><input type="text" name="address" class="form-control form-control-lg" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-phone me-2" style="color: #17A2B8;"></i>Téléphone</label><input type="tel" name="phone" class="form-control form-control-lg" placeholder="ex :+212XXXXXXXXX" required pattern="^\\+\\d{9,}$"></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-envelope me-2"></i>Email</label><input type="email" name="email" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-hospital-symbol me-2"></i>Nom Clinique</label><input type="text" name="clinic" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-calendar-alt me-2"></i>Date de création</label><input type="date" name="creation_date" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-map-marker-alt me-2"></i>Adresse</label><input type="text" name="address" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-phone me-2"></i>Téléphone</label><input type="tel" name="phone" class="form-control" placeholder="ex: +212XXXXXXXXX" required></div>
       <button type="submit" class="btn btn-medical btn-lg w-100">Valider</button>
     </form>
-    <div class='contact-info'>
-        <p>Besoin d'aide ? Contactez-nous :</p>
-        <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-info'><i class='fas fa-envelope'></i> Email</a>
-        <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
+     <div class="text-center mt-3">
+      <a href="{{ url_for('login.login') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour</a>
     </div>
   </div>
-  <div class="signature">Développé par SastoukaDigital</div>
+  <div class="text-center mt-3 footer-links">
+    <span>Développé par SastoukaDigital</span>
+    <div class="mt-1">
+        <a href="/terms">Conditions d'Utilisation</a> &middot;
+        <a href="/privacy">Politique de Confidentialité</a> &middot;
+        <a href="/about">À Propos</a>
+    </div>
+  </div>
+</body>
+</html>
+'''
+
+# --- NOUVEAUX TEMPLATES POUR LES PAGES D'INFORMATION (Internationalisés) ---
+
+about_template = '''
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>À Propos - EasyMedicalink</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .content-card {
+            max-width: 800px;
+            margin: 2rem auto;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card p-4 p-md-5 content-card">
+            <h1 class="text-center text-primary mb-4">À Propos de EasyMedicalink</h1>
+            
+            <p class="lead">
+                EasyMedicalink est une solution de gestion de cabinet médical moderne, conçue pour simplifier le quotidien des professionnels de santé à travers le monde.
+            </p>
+            
+            <h4 class="mt-4">Notre Mission</h4>
+            <p>
+                Notre mission est de fournir aux médecins, cliniques et centres de santé un outil puissant, intuitif et sécurisé pour optimiser la gestion des dossiers patients, la facturation, la prise de rendez-vous et bien plus encore. Nous croyons que la technologie doit être au service de la médecine, en libérant les praticiens des tâches administratives répétitives pour qu'ils puissent se concentrer sur l'essentiel : leurs patients.
+            </p>
+            
+            <h4 class="mt-4">Développé par SastoukaDigital</h4>
+            <p>
+                Derrière EasyMedicalink se trouve SastoukaDigital, une jeune promotrice passionnée par l'innovation et la création de solutions numériques qui ont un impact positif. Nous nous engageons à offrir un service de qualité et un support réactif à tous nos utilisateurs, où qu'ils soient.
+            </p>
+
+            <div class="text-center mt-4">
+                <a href="{{ url_for('login.login') }}" class="btn btn-outline-primary">Retour à la page de connexion</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+'''
+
+terms_template = '''
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conditions d'Utilisation - EasyMedicalink</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .content-card {
+            max-width: 800px;
+            margin: 2rem auto;
+        }
+        .text-danger { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card p-4 p-md-5 content-card">
+            <h1 class="text-center mb-4">Conditions d'Utilisation</h1>
+            <p class="text-muted text-center">Dernière mise à jour : 29 août 2025</p>
+            
+            <h4 class="mt-4">1. Acceptation des conditions</h4>
+            <p>
+                En accédant et en utilisant l'application EasyMedicalink (le "Service"), vous acceptez d'être lié par les présentes Conditions d'Utilisation. Si vous n'êtes pas d'accord, veuillez ne pas utiliser le Service.
+            </p>
+            
+            <h4 class="mt-4">2. Description du Service</h4>
+            <p>
+                EasyMedicalink est une plateforme de gestion de cabinet médical qui permet de gérer les dossiers patients, les rendez-vous, la facturation et d'autres tâches administratives.
+            </p>
+            
+            <h4 class="mt-4">3. Obligations de l'utilisateur</h4>
+            <p>
+                Vous êtes responsable de la confidentialité de votre mot de passe et de votre compte. Vous êtes également responsable de toutes les activités qui se produisent sous votre compte. Vous vous engagez à utiliser le Service conformément aux lois et réglementations en vigueur dans votre juridiction, notamment en ce qui concerne la confidentialité des données médicales.
+            </p>
+            
+            <h4 class="mt-4">4. Limitation de responsabilité</h4>
+            <p>
+                SastoukaDigital ne pourra être tenu responsable des dommages directs ou indirects résultant de l'utilisation du Service. Bien que nous mettions tout en œuvre pour assurer la sécurité des données, la responsabilité finale de la sauvegarde des données incombe à l'utilisateur.
+            </p>
+            
+            <h4 class="mt-4">5. Modifications des conditions</h4>
+            <p>
+                Nous nous réservons le droit de modifier ces conditions à tout moment. Les modifications entreront en vigueur dès leur publication sur cette page.
+            </p>
+            
+            <div class="text-center mt-5">
+                <a href="{{ url_for('login.login') }}" class="btn btn-outline-primary">Retour à la page de connexion</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+'''
+
+privacy_template = '''
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Politique de Confidentialité - EasyMedicalink</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+     <style>
+        body { background-color: #f8f9fa; }
+        .content-card {
+            max-width: 800px;
+            margin: 2rem auto;
+        }
+        .text-danger { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card p-4 p-md-5 content-card">
+            <h1 class="text-center mb-4">Politique de Confidentialité</h1>
+            <p class="text-muted text-center">Dernière mise à jour : 29 août 2025</p>
+
+            <h4 class="mt-4">1. Collecte de l'information</h4>
+            <p>
+                Nous collectons des informations lors de votre inscription sur notre application, notamment votre nom, votre adresse e-mail, votre numéro de téléphone et les informations relatives à votre cabinet. De plus, toutes les données que vous entrez concernant vos patients sont stockées sur nos serveurs.
+            </p>
+            
+            <h4 class="mt-4">2. Utilisation des informations</h4>
+            <p>
+                Les informations que nous collectons sont utilisées pour :
+                <ul>
+                    <li>Fournir et améliorer notre Service</li>
+                    <li>Personnaliser votre expérience</li>
+                    <li>Vous contacter concernant votre compte ou des mises à jour</li>
+                    <li>Assurer la sécurité de la plateforme</li>
+                </ul>
+                Nous ne vendrons, n'échangerons, ni ne transférerons vos informations personnelles identifiables à des tiers.
+            </p>
+
+            <h4 class="mt-4">3. Sécurité des données</h4>
+            <p>
+                Nous mettons en œuvre une variété de mesures de sécurité pour préserver la sécurité de vos informations personnelles et des données de vos patients. Cela inclut le chiffrement des données et des sauvegardes régulières.
+            </p>
+
+            <h4 class="mt-4">4. Droits de l'utilisateur</h4>
+            <p>
+                Selon votre juridiction, vous disposez de droits concernant vos données personnelles, tels que le droit d'accès, de rectification, de suppression ou de portabilité. Pour exercer ces droits, veuillez nous contacter à l'adresse e-mail fournie.
+            </p>
+            
+            <div class="text-center mt-5">
+                <a href="{{ url_for('login.login') }}" class="btn btn-outline-primary">Retour à la page de connexion</a>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
 '''
