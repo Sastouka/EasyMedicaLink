@@ -143,26 +143,31 @@ def login():
     if request.method == "POST":
         email = request.form["email"].lower().strip()
         pwd_hash = hash_password(request.form["password"])
+        selected_role = request.form.get("role_select")
+        
         found_user_info = _find_user_in_centralized_users_file(email, pwd_hash)
 
         if found_user_info:
-            # --- DÉBUT DE LA MODIFICATION ---
-            # Vérifier si le compte est actif AVANT de créer la session
+            actual_role = found_user_info["actual_role"]
+
+            is_pharmacy_role_match = (selected_role == 'pharmacie/magasin' and actual_role == 'pharmacie')
+
+            if selected_role != actual_role and not is_pharmacy_role_match:
+                flash("Le rôle sélectionné est incorrect pour cet utilisateur.", "danger")
+                return redirect(url_for('login.login'))
+
             if not found_user_info["user_data"].get("active", True):
                 flash(
                     "Votre compte est inactif. Veuillez contacter le propriétaire de l'application.", 
                     "danger"
                 )
-                # Rediriger vers la page d'activation pour afficher le message
                 return redirect(url_for("activation.activation"))
-            # --- FIN DE LA MODIFICATION ---
 
             session["email"] = email
-            session["role"] = found_user_info["actual_role"]
+            session["role"] = actual_role
             session["admin_email"] = found_user_info["admin_owner_email"]
             session.permanent = True
 
-            # Collecte de l'ID machine pour les admins
             if session["role"] == 'admin':
                 try:
                     hw_id = get_hardware_id()
@@ -174,7 +179,8 @@ def login():
                     print(f"ERREUR: Impossible de sauvegarder l'ID machine pour {email}: {e}")
 
             return redirect(url_for("accueil.accueil"))
-        flash("Identifiants ou rôle invalides.", "danger")
+        
+        flash("Identifiants invalides.", "danger")
 
     static_folder = current_app.static_folder
     contents = os.listdir(static_folder) if os.path.exists(static_folder) else []
@@ -273,7 +279,6 @@ def reset_password(token):
 
 @login_bp.route('/change_password', methods=['GET', 'POST'])
 def change_password():
-    """Route pour que l'utilisateur connecté change son propre mot de passe."""
     if 'email' not in session:
         flash('Vous devez être connecté pour changer votre mot de passe.', 'warning')
         return redirect(url_for('login.login'))
@@ -289,11 +294,11 @@ def change_password():
                 users[session['email']]['password'] = hash_password(pwd)
                 save_users(users)
                 flash('Mot de passe mis à jour avec succès.', 'success')
-                return redirect(url_for('accueil.accueil')) # Redirige vers l'accueil après succès
+                return redirect(url_for('accueil.accueil'))
             else:
                 flash('Utilisateur non trouvé.', 'danger')
 
-    return render_template_string(reset_template) # Réutilise le template de réinitialisation
+    return render_template_string(reset_template)
 
 @login_bp.route('/logout')
 def logout():
@@ -301,15 +306,14 @@ def logout():
     flash("Vous avez été déconnecté.", "info")
     return redirect(url_for('login.login'))
 
-# ────────────────────────────────────────────────────────────────────────────
-# TEMPLATES (inchangés, car ils sont définis dans templates.py et utilisés via render_template_string)
-# ────────────────────────────────────────────────────────────────────────────
+
+# --- TEMPLATES HTML ---
 login_template = '''
 <!DOCTYPE html><html lang='fr'>
 {{ pwa_head()|safe }}
 <head>
   <meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-  <title>Connexion</title>
+  <title>Connexion - EasyMedicalink</title>
   <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>
   <link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css' rel='stylesheet'>
   <style>
@@ -324,6 +328,8 @@ login_template = '''
       align-items: center;
       justify-content: center;
       flex-direction: column;
+      padding-top: 2rem;
+      padding-bottom: 2rem;
     }
     .card {
       border-radius: 20px;
@@ -333,6 +339,7 @@ login_template = '''
       animation: fadeInUp 0.6s ease-out;
       background: rgba(255, 255, 255, 0.95);
       backdrop-filter: blur(10px);
+      max-width: 480px;
     }
     .btn-gradient {
       background: linear-gradient(45deg, #1a73e8, #0d9488);
@@ -347,21 +354,30 @@ login_template = '''
       box-shadow: 0 5px 15px rgba(26, 115, 232, 0.3);
     }
     .contact-info { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center; }
-    .signature { margin-top: 20px; text-align: center; font-size: 0.8rem; color: #777; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    
-    /* NOUVEAU : Style pour la bannière d'installation PWA */
     .pwa-install-banner {
         background-color: #e3f2fd;
         border: 1px solid #1a73e8;
         border-radius: 12px;
         padding: 1rem;
-        transition: all 0.5s ease-in-out;
+    }
+    .trust-signal h5 { font-size: 1rem; }
+    .trust-signal p { font-size: 0.85rem; }
+    .footer-links {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    .footer-links a {
+        color: #6c757d;
+        text-decoration: none;
+    }
+    .footer-links a:hover {
+        text-decoration: underline;
     }
   </style>
 </head>
 <body class='p-3'>
-  <div class='card p-4' style='max-width:420px'>
+  <div class='card p-4'>
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
 
     <h3 class='text-center mb-4 fw-bold'>
@@ -372,11 +388,9 @@ login_template = '''
         <div class="d-flex align-items-center">
             <div class="flex-grow-1">
                 <h5 class="mb-1" style="color: #1a73e8;"><i class="fas fa-rocket me-2"></i>Accès rapide</h5>
-                <p class="mb-0 small">Installez cette application sur votre appareil pour une expérience améliorée.</p>
+                <p class="mb-0 small">Installez l'application pour une meilleure expérience.</p>
             </div>
-            <button id="pwa-install-button" class="btn btn-gradient ms-3 flex-shrink-0">
-                <i class="fas fa-download me-2"></i>Installer
-            </button>
+            <button id="pwa-install-button" class="btn btn-gradient ms-3 flex-shrink-0">Installer</button>
         </div>
     </div>
 
@@ -388,7 +402,7 @@ login_template = '''
 
     <form method='POST'>
       <div class='mb-3'>
-        <label class='form-label small text-muted'><i class='fas fa-users-cog me-1' style="color: #673AB7;"></i>Rôle</label>
+        <label class='form-label small text-muted'><i class='fas fa-users-cog me-1'></i> Rôle</label>
         <select name='role_select' class='form-select form-select-lg shadow-sm'>
           <option value='admin'>Admin</option>
           <option value='medecin'>Médecin</option>
@@ -400,11 +414,11 @@ login_template = '''
         </select>
       </div>
       <div class='mb-3'>
-        <label class='form-label small text-muted'><i class='fas fa-envelope me-1' style="color: #FF5722;"></i>Email</label>
+        <label class='form-label small text-muted'><i class='fas fa-envelope me-1'></i> Email</label>
         <input name='email' type='email' class='form-control form-control-lg shadow-sm'>
       </div>
       <div class='mb-4'>
-        <label class='form-label small text-muted'><i class='fas fa-key me-1' style="color: #E91E63;"></i>Mot de passe</label>
+        <label class='form-label small text-muted'><i class='fas fa-key me-1'></i> Mot de passe</label>
         <input name='password' type='password' class='form-control form-control-lg shadow-sm'>
       </div>
       <button class='btn btn-gradient btn-lg w-100 py-3 fw-bold'>Se connecter</button>
@@ -416,25 +430,75 @@ login_template = '''
     </div>
 
     <div class='d-flex flex-column gap-2 mt-3'>
-        <a href='{{ url_for("login.register") }}' class='btn btn-outline-primary flex-fill py-2'><i class='fas fa-user-plus me-1' style="color: #00BCD4;"></i>Créer un compte</a>
-        <a href='{{ url_for("login.forgot_password") }}' class='btn btn-outline-secondary flex-fill py-2'><i class='fas fa-unlock-alt me-1' style="color: #FFC107;"></i>Récupération</a>
+        <a href='{{ url_for("login.register") }}' class='btn btn-outline-primary flex-fill py-2'><i class='fas fa-user-plus me-1'></i> Créer un compte</a>
+        <a href='{{ url_for("login.forgot_password") }}' class='btn btn-outline-secondary flex-fill py-2'><i class='fas fa-unlock-alt me-1'></i> Récupération</a>
     </div>
     
     {% if win64_filename or win32_filename %}
     <div class='text-center mt-3'>
-        <div class="alert alert-info small text-center mb-3" role="alert">
-          <i class="fas fa-desktop me-2" style="color: #007BFF;"></i>
-          Pour une expérience en version locale sur PC Windows, pensez à télécharger notre application locale.
+        <div class="alert alert-info small text-center mb-3">
+          <i class="fas fa-desktop me-2"></i>
+          Pour une expérience locale sur PC Windows, téléchargez notre application.
         <div class='d-flex gap-2 justify-content-center'>
           {% if win64_filename %}
-          <a href="{{ url_for('static', filename=win64_filename) }}" class='btn btn-gradient text-white text-decoration-none'><i class='fas fa-download me-1'></i>Windows 64-bit</a>
+          <a href="{{ url_for('static', filename=win64_filename) }}" class='btn btn-gradient text-white text-decoration-none'><i class='fas fa-download me-1'></i> Windows 64-bit</a>
           {% endif %}
           {% if win32_filename %}
-          <a href="{{ url_for('static', filename=win32_filename) }}" class='btn btn-gradient text-white text-decoration-none'><i class='fas fa-download me-1'></i>Windows 32-bit</a>
+          <a href="{{ url_for('static', filename=win32_filename) }}" class='btn btn-gradient text-white text-decoration-none'><i class='fas fa-download me-1'></i> Windows 32-bit</a>
           {% endif %}
         </div>
     </div>
     {% endif %}
+
+    <div class='mt-4 pt-4 border-top'>
+        <h4 class='text-center mb-3 fw-bold'>Nos Engagements</h4>
+        <div class='row text-center trust-signal'>
+            <div class='col-12 col-md-4 mb-3'>
+                <h5><i class='fas fa-shield-alt text-primary mb-2'></i> Sécurité</h5>
+                <p class='small text-muted'>Données chiffrées, sauvegardes quotidiennes.</p>
+            </div>
+            <div class='col-12 col-md-4 mb-3'>
+                <h5><i class='fas fa-headset text-success mb-2'></i> Support</h5>
+                <p class='small text-muted'>Profitez de l'essai gratuit et contactez-nous par Email ou WhatsApp.</p>
+            </div>
+            <div class='col-12 col-md-4 mb-3'>
+                <h5><i class='fas fa-cogs text-info mb-2'></i> Évolution</h5>
+                <p class='small text-muted'>Mises à jour régulières pour répondre à vos besoins.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class='text-center pt-3 border-top'>
+        <h4 class='text-center mb-3 fw-bold'>Recommandé par nos utilisateurs</h4>
+        <div id="testimonialCarousel" class="carousel slide" data-bs-ride="carousel">
+            <div class="carousel-inner">
+                
+                <div class="carousel-item active" data-bs-interval="5000">
+                    <div class='mb-2'>
+                        <i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i>
+                    </div>
+                    <p class='text-muted small fst-italic'>"Un outil intuitif qui a transformé la gestion de mon cabinet. Je gagne un temps précieux chaque jour !"</p>
+                    <p class="fw-bold small mb-0">- Dr. Amadou</p>
+                </div>
+
+                <div class="carousel-item" data-bs-interval="5000">
+                    <div class='mb-2'>
+                        <i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i>
+                    </div>
+                    <p class='text-muted small fst-italic'>"La fonctionnalité de facturation est simple et efficace. Mes assistantes l'adorent."</p>
+                    <p class="fw-bold small mb-0">- Dr. Fatou</p>
+                </div>
+
+                <div class="carousel-item" data-bs-interval="5000">
+                    <div class='mb-2'>
+                        <i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i><i class='fas fa-star' style='color: #FFC107;'></i>
+                    </div>
+                    <p class='text-muted small fst-italic'>"Indispensable pour le suivi de mes patients. Accessible et très complet."</p>
+                    <p class="fw-bold small mb-0">- Dr. Karim</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class='contact-info'>
         <p>Contactez-nous: sastoukadigital@gmail.com | +212652084735</p>
@@ -442,7 +506,10 @@ login_template = '''
         <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
     </div>
   </div>
-  <div class="signature">Développé par SastoukaDigital</div>
+  
+  <div class="text-center mt-3 footer-links">
+    <span>Développé par SastoukaDigital</span>
+  </div>
 
   <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>
   <script src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'></script>
@@ -450,33 +517,24 @@ login_template = '''
     new QRious({ element: document.getElementById('qrLocal'), value: 'https://easymedicalink.onrender.com/', size: 120, foreground: '#1a73e8' });
     new QRious({ element: document.getElementById('qrLan'), value: '{{ url_lan }}', size: 120, foreground: '#0d9488' });
   </script>
-  
   <script>
     document.addEventListener('DOMContentLoaded', () => {
         let deferredPrompt;
         const installBanner = document.getElementById('pwa-install-banner');
         const installButton = document.getElementById('pwa-install-button');
-
-        // Cache la bannière par défaut
-        installBanner.classList.add('d-none');
-
-        // Ne montrer la bannière que si l'événement est déclenché ET que l'app n'est pas déjà installée
+        if (installBanner) { installBanner.classList.add('d-none'); }
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            installBanner.classList.remove('d-none');
+            if (installBanner) { installBanner.classList.remove('d-none'); }
         });
-
         if (installButton) {
             installButton.addEventListener('click', async () => {
                 if (deferredPrompt) {
                     deferredPrompt.prompt();
-                    const { outcome } = await deferredPrompt.userChoice;
-                    console.log(`User response to the install prompt: ${outcome}`);
+                    await deferredPrompt.userChoice;
                     deferredPrompt = null;
-                    if (installBanner) {
-                        installBanner.classList.add('d-none');
-                    }
+                    if (installBanner) { installBanner.classList.add('d-none'); }
                 }
             });
         }
@@ -493,152 +551,89 @@ register_template = '''
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Enregistrement</title>
+  <title>Enregistrement - EasyMedicalink</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
     .btn-medical { background: linear-gradient(45deg,#1a73e8,#0d9488); color:white; }
-    body {
-        background:#f0fafe;
-        display: flex; /* Added for centering */
-        flex-direction: column; /* Added for stacking */
-        align-items: center; /* Added for centering */
-        justify-content: center; /* Added for centering */
-        min-height: 100vh; /* Added for full viewport height */
-    }
-    .contact-info { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center; }
-    .signature { margin-top: 20px; text-align: center; font-size: 0.8rem; color: #777; }
+    body { background:#f0fafe; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .footer-links { font-size: 0.8rem; color: #6c757d; }
+    .footer-links a { color: #6c757d; text-decoration: none; }
+    .footer-links a:hover { text-decoration: underline; }
   </style>
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+<body class="d-flex flex-column align-items-center justify-content-center min-vh-100 p-3">
   <div class="card p-4 shadow w-100" style="max-width: 480px;">
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
-    <h3 class="text-center mb-3"><i class="fas fa-user-plus" style="color: #00BCD4;"></i> Enregistrement</h3>
+    <h3 class="text-center mb-3"><i class="fas fa-user-plus text-info"></i> Enregistrement</h3>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
     {% endwith %}
     <form id="registerForm" method="POST">
       <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-envelope me-2" style="color: #FF5722;"></i>Email</label>
+        <label class="form-label small"><i class="fas fa-envelope me-2"></i>Email</label>
         <input type="email" name="email" class="form-control form-control-lg" required>
       </div>
       <div class="mb-3 row g-2">
         <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-key me-2" style="color: #E91E63;"></i>Mot de passe</label>
+          <label class="form-label small"><i class="fas fa-key me-2"></i>Mot de passe</label>
           <input type="password" name="password" class="form-control form-control-lg" required>
         </div>
         <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-key me-2" style="color: #E91E63;"></i>Confirmer</label>
+          <label class="form-label small"><i class="fas fa-key me-2"></i>Confirmer</label>
           <input type="password" name="confirm" class="form-control form-control-lg" required>
         </div>
       </div>
       <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-users-cog me-2" style="color: #673AB7;"></i>Rôle</label>
-        <select name="role" class="form-select form-select-lg" required>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-      <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-hospital-symbol me-2" style="color: #000080;"></i>Nom Clinique/Cabinet</label>
+        <label class="form-label small"><i class="fas fa-hospital-symbol me-2"></i>Nom Clinique/Cabinet</label>
         <input type="text" name="clinic" class="form-control form-control-lg" required>
       </div>
       <div class="mb-3 row g-2">
         <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-calendar-alt me-2" style="color: #FF69B4;"></i>Date de création (Clinique)</label> {# Updated label #}
-          <input type="date" name="clinic_creation_date" class="form-control form-control-lg" required> {# Updated name #}
+          <label class="form-label small"><i class="fas fa-calendar-alt me-2"></i>Date de création (Clinique)</label>
+          <input type="date" name="clinic_creation_date" class="form-control form-control-lg" required>
         </div>
         <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-map-marker-alt me-2" style="color: #28A745;"></i>Adresse</label>
+          <label class="form-label small"><i class="fas fa-map-marker-alt me-2"></i>Adresse</label>
           <input type="text" name="address" class="form-control form-control-lg" required>
         </div>
       </div>
       <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-phone me-2" style="color: #17A2B8;"></i>Téléphone (Whatsapp)</label>
-        <input type="tel" name="phone" class="form-control form-control-lg" placeholder="ex :+212XXXXXXXXX" required pattern="^\\+\\d{9,}$">
-        <div class="form-text text-muted">Le numéro de téléphone doit commencer par un '+' et contenir au moins 9 chiffres.</div>
+        <label class="form-label small"><i class="fas fa-phone me-2"></i>Téléphone (Whatsapp)</label>
+        <input type="tel" name="phone" class="form-control form-control-lg" placeholder="ex: +212XXXXXXXXX" required pattern="^\\+\\d{9,}$">
       </div>
       <button type="submit" class="btn btn-medical btn-lg w-100">S'enregistrer</button>
     </form>
     <div class="text-center mt-3">
-      <a href="{{ url_for('login.login') }}" class="btn btn-outline-secondary d-inline-flex align-items-center">
-        <i class="fas fa-arrow-left me-1"></i> Retour Connexion
-      </a>
-    </div>
-    <div class='contact-info'>
-        <p>Besoin d'aide ? Contactez-nous :</p>
-        <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-info'><i class='fas fa-envelope'></i> Email</a>
-        <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
+      <a href="{{ url_for('login.login') }}" class="btn btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour Connexion</a>
     </div>
   </div>
-  <div class="signature">
-    Développé par SastoukaDigital
+  <div class="text-center mt-3 footer-links">
+    <span>Développé par SastoukaDigital</span>
   </div>
   <script>
     document.getElementById('registerForm').addEventListener('submit', function(e) {
       e.preventDefault();
       Swal.fire({
         title: 'Important',
-        text: 'Veuillez conserver précieusement votre email, le nom de la clinique, la date de création et l’adresse. Ces informations seront nécessaires pour récupérer votre mot de passe.',
+        text: 'Veuillez conserver précieusement ces informations. Elles seront nécessaires pour récupérer votre mot de passe.',
         icon: 'info',
-        confirmButtonText: 'OK'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          this.submit();
-        }
-      });
+        confirmButtonText: 'Compris'
+      }).then((result) => { if (result.isConfirmed) { this.submit(); } });
     });
-  </script>
-  <script>
-    function copyToClipboard(text) {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        document.body.appendChild(textarea);
-        textarea.select();
-        try {
-            document.execCommand('copy');
-            Swal.fire({ icon: 'success', title: 'Copié!', text: 'Détails du compte copiés.', timer: 1500, showConfirmButton: false });
-        } catch (err) {
-            Swal.fire({ icon: 'error', title: 'Erreur!', text: 'Échec de la copie.', timer: 1500, showConfirmButton: false });
-        }
-        document.body.removeChild(textarea);
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
+    const registrationSuccess = {{ registration_success | tojson | safe }};
+    if (registrationSuccess) {
         const newUserDetails = {{ new_user_details | tojson | safe }};
-        const registrationSuccess = {{ registration_success | tojson | safe }};
-
-        if (registrationSuccess && newUserDetails) {
-            const detailsHtml = `
-                <p>Votre compte administrateur a été créé avec succès !</p>
-                <p>Veuillez conserver précieusement ces informations.</p>
-                <div style="text-align: left; background: #f0f0f0; padding: 10px; border-radius: 5px; margin-top: 15px; font-family: monospace;" id="accountDetails">
-                    <strong>Email:</strong> ${newUserDetails.email}<br>
-                    <strong>Nom Clinique:</strong> ${newUserDetails.clinic}<br>
-                    <strong>Date création:</strong> ${newUserDetails.creation_date}<br>
-                    <strong>Adresse:</strong> ${newUserDetails.address}<br>
-                    <strong>Téléphone:</strong> ${newUserDetails.phone}
-                </div>
-                <button id="copyDetailsBtn" class="swal2-confirm swal2-styled" style="margin-top: 20px;">
-                    <i class="fas fa-copy me-2"></i>Copier les détails
-                </button>
-            `;
-            Swal.fire({
-                title: 'Compte créé !',
-                icon: 'success',
-                html: detailsHtml,
-                confirmButtonText: 'OK',
-                didOpen: () => {
-                    document.getElementById('copyDetailsBtn').addEventListener('click', () => {
-                        copyToClipboard(document.getElementById('accountDetails').innerText);
-                    });
-                }
-            }).then(() => {
-                window.location.href = "{{ url_for('login.login') }}";
-            });
-        }
-    });
+        const detailsText = `Email: ${newUserDetails.email}\\nNom Clinique: ${newUserDetails.clinic}\\nDate création: ${newUserDetails.creation_date}\\nAdresse: ${newUserDetails.address}\\nTéléphone: ${newUserDetails.phone}`;
+        Swal.fire({
+            title: 'Compte créé avec succès !',
+            icon: 'success',
+            html: `<p>Veuillez conserver précieusement ces informations.</p><pre style="text-align:left;background:#f0f0f0;padding:10px;border-radius:5px;">${detailsText.replace(/\\n/g, '<br>')}</pre>`,
+            confirmButtonText: 'Aller à la connexion'
+        }).then(() => { window.location.href = "{{ url_for('login.login') }}"; });
+    }
   </script>
 </body>
 </html>
@@ -657,39 +652,33 @@ reset_template = '''
   <style>
     .btn-medical { background: linear-gradient(45deg,#1a73e8,#0d9488); color:white; }
     body { background:#f0fafe; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
-    .contact-info { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center; }
-    .signature { margin-top: 20px; text-align: center; font-size: 0.8rem; color: #777; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .footer-links { font-size: 0.8rem; color: #6c757d; }
+    .footer-links a { color: #6c757d; text-decoration: none; }
+    .footer-links a:hover { text-decoration: underline; }
   </style>
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+<body class="d-flex flex-column align-items-center justify-content-center min-vh-100 p-3">
   <div class="card p-4 shadow w-100" style="max-width: 400px;">
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
-    <h3 class="text-center mb-3"><i class="fas fa-redo-alt" style="color: #1a73e8;"></i> Réinitialiser mot de passe</h3>
+    <h3 class="text-center mb-3"><i class="fas fa-redo-alt text-primary"></i> Réinitialiser</h3>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
     {% endwith %}
     <form method="POST">
-      <div class="mb-3 row g-2">
-        <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-key me-2" style="color: #E91E63;"></i>Nouveau mot de passe</label>
+      <div class="mb-3">
+          <label class="form-label small"><i class="fas fa-key me-2"></i>Nouveau mot de passe</label>
           <input type="password" name="password" class="form-control form-control-lg" required>
-        </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label small"><i class="fas fa-key me-2" style="color: #E91E63;"></i>Confirmer</label>
+      </div>
+      <div class="mb-3">
+          <label class="form-label small"><i class="fas fa-key me-2"></i>Confirmer</label>
           <input type="password" name="confirm" class="form-control form-control-lg" required>
-        </div>
       </div>
       <button type="submit" class="btn btn-medical btn-lg w-100">Mettre à jour</button>
     </form>
-    <div class='contact-info'>
-        <p>Besoin d'aide ? Contactez-nous :</p>
-        <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-info'><i class='fas fa-envelope'></i> Email</a>
-        <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
-    </div>
   </div>
-  <div class="signature">
-    Développé par SastoukaDigital
+  <div class="text-center mt-3 footer-links">
+    <span>Développé par SastoukaDigital</span>
   </div>
 </body>
 </html>
@@ -708,33 +697,34 @@ forgot_template = '''
   <style>
     .btn-medical { background: linear-gradient(45deg,#1a73e8,#0d9488); color:white; }
     body { background:#f0fafe; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
-    .contact-info { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center; }
-    .signature { margin-top: 20px; text-align: center; font-size: 0.8rem; color: #777; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .footer-links { font-size: 0.8rem; color: #6c757d; }
+    .footer-links a { color: #6c757d; text-decoration: none; }
+    .footer-links a:hover { text-decoration: underline; }
   </style>
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+<body class="d-flex flex-column align-items-center justify-content-center min-vh-100 p-3">
   <div class="card p-4 shadow w-100" style="max-width: 400px;">
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
-    <h3 class="text-center mb-3"><i class="fas fa-unlock-alt" style="color: #FFC107;"></i>Récupération</h3>
+    <h3 class="text-center mb-3"><i class="fas fa-unlock-alt text-warning"></i> Récupération</h3>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
     {% endwith %}
     <form method="POST">
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-envelope me-2" style="color: #FF5722;"></i>Email</label><input type="email" name="email" class="form-control form-control-lg" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-hospital-symbol me-2" style="color: #000080;"></i>Nom Clinique</label><input type="text" name="clinic" class="form-control form-control-lg" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-calendar-alt me-2" style="color: #FF69B4;"></i>Date de création</label><input type="date" name="creation_date" class="form-control form-control-lg" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-map-marker-alt me-2" style="color: #28A745;"></i>Adresse</label><input type="text" name="address" class="form-control form-control-lg" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-phone me-2" style="color: #17A2B8;"></i>Téléphone</label><input type="tel" name="phone" class="form-control form-control-lg" placeholder="ex :+212XXXXXXXXX" required pattern="^\\+\\d{9,}$"></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-envelope me-2"></i>Email</label><input type="email" name="email" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-hospital-symbol me-2"></i>Nom Clinique</label><input type="text" name="clinic" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-calendar-alt me-2"></i>Date de création</label><input type="date" name="creation_date" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-map-marker-alt me-2"></i>Adresse</label><input type="text" name="address" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label small"><i class="fas fa-phone me-2"></i>Téléphone</label><input type="tel" name="phone" class="form-control" placeholder="ex: +212XXXXXXXXX" required></div>
       <button type="submit" class="btn btn-medical btn-lg w-100">Valider</button>
     </form>
-    <div class='contact-info'>
-        <p>Besoin d'aide ? Contactez-nous :</p>
-        <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-info'><i class='fas fa-envelope'></i> Email</a>
-        <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
+     <div class="text-center mt-3">
+      <a href="{{ url_for('login.login') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour</a>
     </div>
   </div>
-  <div class="signature">Développé par SastoukaDigital</div>
+  <div class="text-center mt-3 footer-links">
+    <span>Développé par SastoukaDigital</span>
+  </div>
 </body>
 </html>
 '''

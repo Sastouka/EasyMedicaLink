@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta
 import webbrowser
 # MODIFIÉ : Importation spécifique pour le blueprint et la base de données de l'assistant IA
 from ia_assitant import ia_assitant_bp, db as ia_db
@@ -9,7 +10,6 @@ instance_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 # Créer l'application en spécifiant le nouveau chemin
 app = Flask(__name__, instance_path=instance_folder_path)
 from datetime import timedelta
-
 # --- NOUVEAUX IMPORTS POUR FIREBASE ET LA PLANIFICATION ---
 import json
 from firebase import FirebaseManager

@@ -493,67 +493,77 @@ def handle_excel_download() -> tuple[io.BytesIO, str]:
     return buffer, filename
 
 def handle_excel_upload(uploaded_file) -> tuple[bool, str]:
-    """Imports an Excel file and updates existing databases."""
+    """Importe un fichier Excel et met à jour les bases de données en se basant sur la structure des colonnes."""
     if not uploaded_file or uploaded_file.filename == '':
         return False, "Aucun fichier sélectionné."
-
     if not (uploaded_file.filename.lower().endswith('.xlsx') or uploaded_file.filename.lower().endswith('.xls')):
         return False, "Type de fichier non supporté. Veuillez uploader un fichier Excel (.xlsx ou .xls)."
 
     try:
-        # Lire toutes les feuilles du fichier importé
-        imported_dfs = pd.read_excel(uploaded_file.stream, sheet_name=None)
-        updated_count = 0
+        imported_sheets = pd.read_excel(uploaded_file.stream, sheet_name=None)
         
-        # Définir les chemins des fichiers de destination
-        comptabilite_path = os.path.join(utils.EXCEL_FOLDER, 'Comptabilite.xlsx')
-        pharmacie_path = os.path.join(utils.EXCEL_FOLDER, 'Pharmacie.xlsx')
-        factures_path = os.path.join(utils.EXCEL_FOLDER, 'factures.xlsx')
-        
-        # Définir les mappings des noms de feuilles vers les chemins de fichiers
-        # pour s'assurer que les données sont sauvegardées au bon endroit.
-        sheet_to_file_mapping = {
-            'Recettes': comptabilite_path,
-            'Depenses': comptabilite_path,
-            'Salaires': comptabilite_path,
-            'TiersPayants': comptabilite_path,
-            'DocumentsFiscaux': comptabilite_path,
-            'Inventaire': pharmacie_path,
-            'Mouvements': pharmacie_path,
-            'Factures': factures_path,
-            # Ajoutez d'autres mappings si nécessaire
+        # Définir la "signature" (colonnes clés) pour chaque fichier mono-feuille
+        file_signatures = {
+            os.path.join(utils.EXCEL_FOLDER, 'factures.xlsx'): {'Numero', 'Patient', 'Total', 'Statut_Paiement'},
+            os.path.join(utils.EXCEL_FOLDER, 'ConsultationData.xlsx'): {'consultation_date', 'patient_id', 'clinical_signs', 'diagnosis'},
+            os.path.join(utils.EXCEL_FOLDER, 'DonneesRDV.xlsx'): {'Num Ordre', 'ID', 'Date', 'Heure', 'Medecin_Email'},
+            os.path.join(utils.EXCEL_FOLDER, 'info_Base_patient.xlsx'): {'ID', 'Nom', 'Prenom', 'DateNaissance'},
+            os.path.join(utils.EXCEL_FOLDER, 'Biologie.xlsx'): {'ID_Patient', 'ANALYSE', 'CONCLUSION'},
+            os.path.join(utils.EXCEL_FOLDER, 'Radiologie.xlsx'): {'ID_Patient', 'RADIOLOGIE', 'CONCLUSION'},
         }
-        
-        for sheet_name, df_imported in imported_dfs.items():
-            # Chercher le fichier de destination pour la feuille actuelle
-            destination_file = sheet_to_file_mapping.get(sheet_name)
-            
-            if destination_file:
-                # Charger toutes les feuilles du fichier de destination
-                if os.path.exists(destination_file):
-                    all_sheets = pd.read_excel(destination_file, sheet_name=None)
-                else:
-                    all_sheets = {}
-                
-                # Remplacer la feuille existante par la feuille importée
-                all_sheets[sheet_name] = df_imported
-                
-                # Sauvegarder toutes les feuilles dans le fichier de destination
-                with pd.ExcelWriter(destination_file, engine='openpyxl') as writer:
-                    for name, df in all_sheets.items():
-                        df.to_excel(writer, sheet_name=name, index=False)
-                
-                updated_count += 1
-                
-            else:
-                print(f"AVERTISSEMENT: La feuille '{sheet_name}' n'a pas de fichier de destination défini. Elle sera ignorée.")
 
-        if updated_count > 0:
-            return True, f"{updated_count} feuille(s) Excel mise(s) à jour avec succès."
-        return False, "Aucune feuille de calcul correspondante n'a été trouvée pour la mise à jour."
+        # Définir les fichiers multi-feuilles qui seront gérés par leur nom de feuille
+        multi_sheet_files = {
+            os.path.join(utils.EXCEL_FOLDER, 'Comptabilite.xlsx'): ['Recettes', 'Depenses', 'Salaires', 'TiersPayants', 'DocumentsFiscaux'],
+            os.path.join(utils.EXCEL_FOLDER, 'Pharmacie.xlsx'): ['Inventaire', 'Mouvements'],
+        }
+
+        updated_files_count = 0
+        processed_sheets = set()
+
+        # --- Traitement des fichiers mono-feuille par reconnaissance de colonnes ---
+        for sheet_name, df_imported in imported_sheets.items():
+            if sheet_name in processed_sheets: continue # Éviter de traiter une feuille déjà assignée
+            
+            imported_cols = set(df_imported.columns)
+            for file_path, signature_cols in file_signatures.items():
+                if signature_cols.issubset(imported_cols):
+                    # Correspondance trouvée, écraser le fichier de destination
+                    df_imported.to_excel(file_path, index=False) # Le nom de la feuille sera 'Sheet1' par défaut, ce qui est cohérent
+                    updated_files_count += 1
+                    processed_sheets.add(sheet_name)
+                    print(f"INFO: Fichier '{os.path.basename(file_path)}' mis à jour par reconnaissance de colonnes avec la feuille '{sheet_name}'.")
+                    break # Passer à la feuille suivante une fois qu'une correspondance est trouvée
+        
+        # --- Traitement des fichiers multi-feuilles par nom de feuille ---
+        for file_path, expected_sheets in multi_sheet_files.items():
+            sheets_to_update = {s: imported_sheets[s] for s in expected_sheets if s in imported_sheets and s not in processed_sheets}
+            if not sheets_to_update:
+                continue
+            
+            existing_sheets = {}
+            if os.path.exists(file_path):
+                try:
+                    existing_sheets = pd.read_excel(file_path, sheet_name=None)
+                except Exception:
+                    pass
+            
+            final_sheets = {**existing_sheets, **sheets_to_update}
+            
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                for s_name, df in final_sheets.items():
+                    df.to_excel(writer, sheet_name=s_name, index=False)
+            
+            updated_files_count += 1
+            processed_sheets.update(sheets_to_update.keys())
+            print(f"INFO: Fichier multi-feuilles '{os.path.basename(file_path)}' mis à jour par nom de feuille.")
+
+        if updated_files_count > 0:
+            return True, f"{updated_files_count} fichier(s) de données ont été mis à jour avec succès."
+        return False, "Aucune feuille de calcul correspondante (basée sur les colonnes ou les noms) n'a été trouvée pour la mise à jour."
 
     except Exception as e:
-        return False, f"Erreur lors de l'importation du fichier Excel : {e}"
+        return False, f"Erreur lors du traitement du fichier Excel : {e}"
 
 def handle_image_upload(image_file, image_type: str) -> tuple[bool, str]:
     """Imports an image (logo or background) and updates the configuration."""
