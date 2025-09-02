@@ -1,6 +1,6 @@
 # login.py
 # Description: Gère l'authentification, l'enregistrement, la récupération et le changement de mot de passe.
-# Version finale fusionnant la refactorisation et les fonctionnalités complètes.
+# Version finale avec gestion dynamique des URL (local et déploiement).
 
 import os
 import json
@@ -24,13 +24,14 @@ from flask import (
     session,
     current_app
 )
+from flask_mail import Message
+# L'importation 'from app import mail' est volontairement retirée d'ici pour éviter l'erreur circulaire.
 
 # Importations depuis les modules internes de l'application
 import utils
 from activation import TRIAL_DAYS, get_hardware_id
 
 # --- Configuration et Constantes ---
-
 login_bp = Blueprint("login", __name__)
 USERS_FILE: Optional[Path] = None
 HMAC_KEY = b"votre_cle_secrete_interne_a_remplacer" # IMPORTANT: À changer pour une clé plus robuste
@@ -40,6 +41,117 @@ ALL_BLUEPRINTS = [
     'comptabilite', 'statistique', 'administrateur_bp', 'developpeur_bp',
     'patient_rdv', 'routes', 'gestion_patient', 'guide', 'ia_assitant'
 ]
+
+# --- Fonctions d'envoi d'e-mail ---
+
+def send_confirmation_email(user_details: Dict[str, Any]):
+    """Envoie un e-mail de confirmation après l'enregistrement."""
+    from app import mail  # Importation locale pour éviter la dépendance circulaire
+    try:
+        recipient_email = user_details.get("email")
+        if not recipient_email:
+            print("ERREUR E-MAIL: Destinataire manquant.")
+            return
+
+        html_body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; color: #333;">
+                <h2>Bienvenue chez EasyMedicalink !</h2>
+                <p>Votre compte a été créé avec succès. Voici un résumé des informations que vous avez fournies :</p>
+                <table style="border-collapse: collapse; width: 100%; max-width: 500px; border: 1px solid #ddd;">
+                    <tr style="background-color: #f2f2f2;">
+                        <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Champ</th>
+                        <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Valeur</th>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Email</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('email')}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Nom de la Clinique</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('clinic')}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Date de création (Clinique)</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('creation_date')}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Adresse</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('address')}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Téléphone</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('phone')}</td>
+                    </tr>
+                </table>
+                <p><b>Important :</b> Conservez ces informations précieusement.</p>
+                <p>L'équipe EasyMedicalink</p>
+            </body>
+        </html>
+        """
+        
+        msg = Message(
+            subject="Confirmation de création de votre compte EasyMedicalink",
+            sender=("EasyMedicalink", current_app.config['MAIL_USERNAME']),
+            recipients=[recipient_email],
+            html=html_body
+        )
+        mail.send(msg)
+        print(f"E-mail de confirmation envoyé à {recipient_email}")
+    except Exception as e:
+        print(f"ERREUR CRITIQUE: Échec de l'envoi de l'e-mail de confirmation : {e}")
+        flash("Le compte a été créé, mais l'envoi de l'e-mail de confirmation a échoué. Contactez le support.", "warning")
+
+def send_password_reset_email(email: str, token: str):
+    """Envoie un e-mail avec le lien de réinitialisation de mot de passe."""
+    from app import mail
+    try:
+        # On vérifie si l'application est en mode debug.
+        # En local, app.debug sera True. Sur Render, il sera False.
+        if current_app.debug:
+            # Mode local : on utilise l'IP du réseau local.
+            base_url = f"http://{lan_ip()}:3000"
+            mode = "Local (Debug)"
+        else:
+            # Mode production : on utilise l'URL définie dans les variables d'environnement.
+            base_url = os.environ.get('APP_BASE_URL')
+            mode = "Production"
+            # Sécurité : si l'URL n'est pas définie en production, on signale une erreur.
+            if not base_url:
+                print("🔥 ERREUR CRITIQUE : APP_BASE_URL n'est pas définie pour le mode production !")
+                return
+
+        relative_url = url_for('login.reset_password', token=token)
+        reset_url = f"{base_url}{relative_url}"
+        
+        print(f"Génération du lien de réinitialisation ({mode}) : {reset_url}")
+
+        html_body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; color: #333;">
+                <h2>Réinitialisation de votre mot de passe</h2>
+                <p>Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe. Ce lien expirera dans 1 heure.</p>
+                <p>Si le lien n'est pas cliquable, copiez et collez cette adresse dans votre navigateur : {reset_url}</p>
+                <p style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
+                    <a href="{reset_url}" style="background-color: #1a73e8; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                        Réinitialiser mon mot de passe
+                    </a>
+                </p>
+                <p>Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.</p>
+            </body>
+        </html>
+        """
+        msg = Message(
+            subject="Instructions pour réinitialiser votre mot de passe EasyMedicalink",
+            sender=("EasyMedicalink", current_app.config['MAIL_USERNAME']),
+            recipients=[email],
+            html=html_body
+        )
+        mail.send(msg)
+        print(f"E-mail de réinitialisation envoyé à {email}")
+    except Exception as e:
+        print(f"ERREUR CRITIQUE: Échec de l'envoi de l'e-mail de réinitialisation : {e}")
+        flash("Une erreur est survenue lors de l'envoi de l'e-mail. Veuillez réessayer.", "danger")
 
 # --- Gestion des Fichiers et Chemins ---
 
@@ -192,7 +304,6 @@ def login():
 @login_bp.route("/register", methods=["GET", "POST"])
 def register():
     _set_login_paths()
-    registration_success, new_user_details = False, None
     if request.method == "POST":
         f = request.form
         email = f["email"].lower().strip()
@@ -207,6 +318,15 @@ def register():
         else:
             users = load_users()
             creation_date = f["clinic_creation_date"]
+            
+            new_user_details = {
+                "email": email, 
+                "clinic": f["clinic"], 
+                "creation_date": creation_date, 
+                "address": f["address"], 
+                "phone": phone
+            }
+            
             users[email] = {
                 "password": hash_password(f["password"]), "role": "admin", "clinic": f["clinic"],
                 "clinic_creation_date": creation_date, "account_creation_date": date.today().isoformat(),
@@ -216,34 +336,30 @@ def register():
                 "activation": {"plan": f"essai_{TRIAL_DAYS}jours", "activation_date": date.today().isoformat(), "activation_code": "0000-0000-0000-0000"}
             }
             save_users(users)
-            new_user_details = {"email": email, "clinic": f["clinic"], "creation_date": creation_date, "address": f["address"], "phone": phone}
-            registration_success = True
-    return render_template_string(register_template, registration_success=registration_success, new_user_details=new_user_details)
+            
+            send_confirmation_email(new_user_details)
+            
+            flash(f"Compte créé avec succès ! Un e-mail de confirmation a été envoyé à {email}.", "success")
+            return redirect(url_for('login.login'))
+            
+    return render_template_string(register_template)
 
 @login_bp.route('/forgot_password', methods=['GET', 'POST'])
 def forgot_password():
     _set_login_paths()
-    if request.method == "POST":
-        f = request.form
-        email, clinic, address, phone = f['email'].strip().lower(), f['clinic'], f['address'], f['phone'].strip()
-        creation_date = f['creation_date']
+    if request.method == 'POST':
+        email = request.form['email'].strip().lower()
         users = load_users()
-        user_found = None
 
-        if email in users and users[email].get('role') == 'admin':
-            user = users[email]
-            user_creation_date = user.get('clinic_creation_date', user.get('creation_date'))
-            if (user.get('clinic') == clinic and user_creation_date == creation_date and
-                user.get('address') == address and user.get('phone') == phone):
-                user_found = user
-
-        if user_found:
+        if email in users:
             token, expiry = generate_reset_token(), (datetime.now() + timedelta(hours=1)).isoformat()
             users[email]['reset_token'], users[email]['reset_expiry'] = token, expiry
             save_users(users)
-            flash('Un lien de réinitialisation a été généré.', 'info')
-            return redirect(url_for('login.reset_password', token=token))
-        flash('Données non reconnues, veuillez réessayer.', "danger")
+            send_password_reset_email(email, token)
+
+        flash("Si un compte correspondant à cet e-mail existe, un lien de réinitialisation a été envoyé.", 'info')
+        return redirect(url_for('login.login'))
+
     return render_template_string(forgot_template)
 
 @login_bp.route('/reset_password/<token>', methods=['GET', 'POST'])
@@ -623,17 +739,6 @@ register_template = '''
         confirmButtonText: 'Compris'
       }).then((result) => { if (result.isConfirmed) { this.submit(); } });
     });
-    const registrationSuccess = {{ registration_success | tojson | safe }};
-    if (registrationSuccess) {
-        const newUserDetails = {{ new_user_details | tojson | safe }};
-        const detailsText = `Email: ${newUserDetails.email}\\nNom Clinique: ${newUserDetails.clinic}\\nDate création: ${newUserDetails.creation_date}\\nAdresse: ${newUserDetails.address}\\nTéléphone: ${newUserDetails.phone}`;
-        Swal.fire({
-            title: 'Compte créé avec succès !',
-            icon: 'success',
-            html: `<p>Veuillez conserver précieusement ces informations.</p><pre style="text-align:left;background:#f0f0f0;padding:10px;border-radius:5px;">${detailsText.replace(/\\n/g, '<br>')}</pre>`,
-            confirmButtonText: 'Aller à la connexion'
-        }).then(() => { window.location.href = "{{ url_for('login.login') }}"; });
-    }
   </script>
 </body>
 </html>
@@ -707,19 +812,19 @@ forgot_template = '''
   <div class="card p-4 shadow w-100" style="max-width: 400px;">
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
     <h3 class="text-center mb-3"><i class="fas fa-unlock-alt text-warning"></i> Récupération</h3>
+    <p class="text-center text-muted small mb-3">Veuillez saisir l'adresse e-mail de votre compte. Un lien pour réinitialiser votre mot de passe vous sera envoyé.</p>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
     {% endwith %}
     <form method="POST">
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-envelope me-2"></i>Email</label><input type="email" name="email" class="form-control" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-hospital-symbol me-2"></i>Nom Clinique</label><input type="text" name="clinic" class="form-control" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-calendar-alt me-2"></i>Date de création</label><input type="date" name="creation_date" class="form-control" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-map-marker-alt me-2"></i>Adresse</label><input type="text" name="address" class="form-control" required></div>
-      <div class="mb-3"><label class="form-label small"><i class="fas fa-phone me-2"></i>Téléphone</label><input type="tel" name="phone" class="form-control" placeholder="ex: +212XXXXXXXXX" required></div>
-      <button type="submit" class="btn btn-medical btn-lg w-100">Valider</button>
+      <div class="mb-3">
+          <label class="form-label small"><i class="fas fa-envelope me-2"></i>Adresse e-mail</label>
+          <input type="email" name="email" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-medical btn-lg w-100">Envoyer le lien de récupération</button>
     </form>
      <div class="text-center mt-3">
-      <a href="{{ url_for('login.login') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour</a>
+      <a href="{{ url_for('login.login') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour à la connexion</a>
     </div>
   </div>
   <div class="text-center mt-3 footer-links">
