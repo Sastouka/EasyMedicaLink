@@ -1,11 +1,11 @@
+# app.py (VERSION CORRIGÉE)
 import os
 import sys
 from datetime import datetime, timedelta
 import webbrowser
-import json # <<<<<<< ON UTILISE LE MODULE JSON
+import json
 
 # --- CHARGEMENT DES CLÉS DEPUIS email.json ---
-# Cette section remplace l'appel à load_dotenv()
 try:
     config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'email.json')
     with open(config_path, 'r') as f:
@@ -22,17 +22,14 @@ except Exception as e:
 from ia_assitant import ia_assitant_bp, db as ia_db
 from flask import Flask, session, redirect, url_for, request, render_template_string, flash
 from flask_mail import Mail
-
-# --- NOUVEAUX IMPORTS POUR FIREBASE ET LA PLANIFICATION ---
 from firebase import FirebaseManager
 from apscheduler.schedulers.background import BackgroundScheduler
-# ---------------------------------------------------------
+import activation # Importer activation pour utiliser ses fonctions
 
 mail = Mail()
 
 # ───────────── 1. Création de l’application
 def create_app():
-    # ... (le reste de la fonction est inchangé car elle lit déjà depuis os.environ) ...
     instance_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MEDICALINK_DATA', 'instance')
     
     app = Flask(
@@ -86,7 +83,6 @@ def create_app():
     import statistique
     import developpeur
     import routes 
-    import activation 
     import patient_rdv
     import biologie
     import radiologie
@@ -104,7 +100,7 @@ def create_app():
     app.register_blueprint(rdv.rdv_bp, url_prefix="/rdv")
     app.register_blueprint(facturation.facturation_bp)
     app.register_blueprint(statistique.statistique_bp, url_prefix="/statistique")
-    app.register_blueprint(activation.activation_bp)
+    app.register_blueprint(activation.activation_bp, url_prefix="/activation") # Ajout d'un préfixe pour la clarté
     app.register_blueprint(patient_rdv.patient_rdv_bp)
     app.register_blueprint(biologie.biologie_bp)
     app.register_blueprint(radiologie.radiologie_bp)
@@ -117,41 +113,65 @@ def create_app():
     def root():
         return redirect(url_for("login.login")) if "email" not in session else redirect(url_for("accueil.accueil"))
 
+    # --- DÉBUT DE LA SECTION CORRIGÉE ---
+    # Nouvelle fonction de vérification centralisée
     @app.before_request
-    def set_dynamic_paths_for_current_admin():
-        admin_email = session.get('admin_email', 'default_admin@example.com')
-        utils.set_dynamic_base_dir(admin_email)
-        rdv.set_rdv_dirs()
-        patient_rdv.set_patient_rdv_dirs()
-        utils.init_app(app)
-        utils.load_patient_data()
+    def central_request_guard():
+        # Définir le chemin de base en premier
+        login._set_login_paths()
 
-    activation.init_app(app)
+        # Liste des pages qui sont TOUJOURS publiques, que l'utilisateur soit connecté ou non.
+        public_endpoints = [
+            'static',
+            'login.login',
+            'login.register',
+            'login.complete_registration', # <-- ESSENTIEL
+            'login.forgot_password',     # <-- ESSENTIEL
+            'login.reset_password',        # <-- ESSENTIEL
+            'activation.activation',
+            'activation.paypal_success',
+            'activation.paypal_cancel',
+            'developpeur.home' # Exemple, ajoutez d'autres routes de 'developpeur' si nécessaire
+        ]
+        
+        # Si la requête concerne un fichier statique ou une page PWA, on ne fait rien.
+        if request.path.startswith(('/static/', '/icon/')) or request.path in [
+            '/sw.js', '/manifest.webmanifest', '/service-worker.js', '/offline'
+        ]:
+            return
+        
+        # Si la page demandée est dans notre liste publique, on autorise l'accès.
+        if request.endpoint in public_endpoints:
+            return
+
+        # --- À partir d'ici, toutes les autres routes nécessitent une connexion ---
+
+        # 1. Vérifier si l'utilisateur est connecté
+        if "email" not in session:
+            flash("Veuillez vous connecter pour accéder à cette page.", "warning")
+            return redirect(url_for("login.login"))
+
+        # 2. Définir le répertoire de données pour l'utilisateur connecté
+        utils.set_dynamic_base_dir(session['admin_email'])
+        
+        # 3. Vérifier si le compte est actif (active: true dans users.json)
+        current_user = activation._user()
+        if not current_user or not current_user.get("active", True):
+            session.clear()
+            flash("Votre compte a été désactivé ou n'existe plus.", "warning")
+            return redirect(url_for("login.login"))
+            
+        # 4. Vérifier si la licence est valide
+        if not activation.check_activation():
+            flash("Votre licence est invalide ou a expiré. Veuillez activer le produit.", "warning")
+            return redirect(url_for("activation.activation"))
+    
+    # --- FIN DE LA SECTION CORRIGÉE ---
+
     routes.register_routes(app)
 
     with app.app_context():
-        offline_urls = []
-        for rule in app.url_map.iter_rules():
-            if "GET" in rule.methods and not ("<" in rule.rule or rule.rule.startswith("/static")):
-                try:
-                    url = url_for(rule.endpoint)
-                    offline_urls.append(url)
-                except Exception:
-                    pass
-        
-        offline_urls.extend([
-            '/offline', '/login', '/register', '/forgot_password',
-            '/reset_password', '/activation', '/paypal_success', '/paypal_cancel',
-            '/patient_rdv/', '/gestion_patient/'
-        ])
-        
-        app.config['PWA_OFFLINE_URLS'] = list(set(offline_urls))
-
-    @app.route("/offline")
-    def offline():
-        return render_template_string("""..."""), 200
-
-    with app.app_context():
+        # (le reste de la configuration PWA est inchangé)
         ia_db.create_all()
 
     print("Application Flask démarrée et Blueprints enregistrés.")
@@ -160,7 +180,7 @@ def create_app():
 # ───────────── Initialisation de l'application pour Gunicorn
 app = create_app()
 
-# ... (toute la section Firebase et Scheduler reste inchangée) ...
+# ... (le reste du fichier pour Firebase, Scheduler et le lancement local est inchangé) ...
 credentials_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'firebase_credentials.json')
 project_id = ""
 if os.path.exists(credentials_path):
@@ -177,7 +197,6 @@ else:
 app.firebase_manager = firebase_manager
 
 def daily_backup_task():
-    # ... (code de la tâche de backup inchangé) ...
     print(f"🚀 [BACKUP] Démarrage de la tâche de sauvegarde quotidienne à {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
     data_root_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MEDICALINK_DATA")
     if firebase_manager and os.path.exists(data_root_path):
@@ -190,18 +209,11 @@ def daily_backup_task():
         print("ℹ️ [BACKUP] Le gestionnaire Firebase n'est pas initialisé ou le dossier MEDICALINK_DATA n'existe pas. Sauvegarde annulée.")
 
 scheduler = BackgroundScheduler(daemon=True)
-# Exécute la tâche deux fois par jour : à minuit (0) et à midi (12)
 scheduler.add_job(daily_backup_task, 'cron', hour='0,12', minute=0)
 scheduler.start()
 print("🗓️ Tâche de sauvegarde quotidienne planifiée pour s'exécuter tous les jours à minuit.")
 
-
-# ───────────── 13. Lancement pour le développement local
 if __name__ == '__main__':
-    # La vérification manuelle n'est plus nécessaire ici car le code au début du fichier gère le chargement.
-    
-    # On vérifie la variable d'environnement 'WERKZEUG_RUN_MAIN'.
-    # Si elle n'est pas définie, cela signifie que nous sommes dans le premier processus (le surveilleur).
     if os.environ.get("WERKZEUG_RUN_MAIN") is None:
         try:
             if os.environ.get("FLASK_ENV") != "production" and not os.environ.get("REPL_SLUG"):

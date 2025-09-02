@@ -1,6 +1,6 @@
 # login.py
 # Description: Gère l'authentification, l'enregistrement, la récupération et le changement de mot de passe.
-# Version finale avec gestion dynamique des URL (local et déploiement).
+# Version finale avec toutes les corrections appliquées.
 
 import os
 import json
@@ -25,16 +25,15 @@ from flask import (
     current_app
 )
 from flask_mail import Message
-# L'importation 'from app import mail' est volontairement retirée d'ici pour éviter l'erreur circulaire.
 
-# Importations depuis les modules internes de l'application
 import utils
 from activation import TRIAL_DAYS, get_hardware_id
 
 # --- Configuration et Constantes ---
 login_bp = Blueprint("login", __name__)
 USERS_FILE: Optional[Path] = None
-HMAC_KEY = b"votre_cle_secrete_interne_a_remplacer" # IMPORTANT: À changer pour une clé plus robuste
+PENDING_REGISTRATIONS_FILE: Optional[Path] = None
+HMAC_KEY = b"votre_cle_secrete_interne_a_remplacer" 
 
 ALL_BLUEPRINTS = [
     'accueil', 'rdv', 'facturation', 'biologie', 'radiologie', 'pharmacie',
@@ -44,79 +43,122 @@ ALL_BLUEPRINTS = [
 
 # --- Fonctions d'envoi d'e-mail ---
 
-def send_confirmation_email(user_details: Dict[str, Any]):
-    """Envoie un e-mail de confirmation après l'enregistrement."""
-    from app import mail  # Importation locale pour éviter la dépendance circulaire
+def send_welcome_email(recipient_email: str):
+    """Envoie un e-mail de bienvenue et de confirmation après l'enregistrement."""
+    from app import mail
     try:
-        recipient_email = user_details.get("email")
-        if not recipient_email:
-            print("ERREUR E-MAIL: Destinataire manquant.")
-            return
+        if current_app.debug:
+            base_url = f"http://{lan_ip()}:3000"
+        else:
+            base_url = os.environ.get('APP_BASE_URL')
+            if not base_url:
+                print("🔥 ERREUR CRITIQUE : APP_BASE_URL n'est pas définie pour le mode production !")
+                base_url = ""
+
+        icon_url = f"{base_url}/static/pwa/icon-512.png"
+        login_url = f"{base_url}{url_for('login.login')}"
 
         html_body = f"""
+        <!DOCTYPE html>
         <html>
-            <body style="font-family: Arial, sans-serif; color: #333;">
-                <h2>Bienvenue chez EasyMedicalink !</h2>
-                <p>Votre compte a été créé avec succès. Voici un résumé des informations que vous avez fournies :</p>
-                <table style="border-collapse: collapse; width: 100%; max-width: 500px; border: 1px solid #ddd;">
-                    <tr style="background-color: #f2f2f2;">
-                        <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Champ</th>
-                        <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Valeur</th>
-                    </tr>
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Email</strong></td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('email')}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Nom de la Clinique</strong></td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('clinic')}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Date de création (Clinique)</strong></td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('creation_date')}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Adresse</strong></td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('address')}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Téléphone</strong></td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{user_details.get('phone')}</td>
-                    </tr>
-                </table>
-                <p><b>Important :</b> Conservez ces informations précieusement.</p>
-                <p>L'équipe EasyMedicalink</p>
-            </body>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f7f6; }}
+                .container {{ width: 100%; max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden; }}
+                .header {{ background-color: #e3f2fd; text-align: center; padding: 20px; }}
+                .header img {{ width: 80px; height: 80px; }}
+                .content {{ padding: 30px; color: #333; line-height: 1.6; }}
+                .content h1 {{ color: #0d47a1; }}
+                .button {{ display: inline-block; background-color: #1a73e8; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 20px; }}
+                .footer {{ font-size: 0.8em; text-align: center; color: #777; padding: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <img src="{icon_url}" alt="EasyMedicalink Logo">
+                </div>
+                <div class="content">
+                    <h1>Bienvenue sur EasyMedicalink !</h1>
+                    <p>Bonjour,</p>
+                    <p>Votre compte a été créé avec succès. Nous sommes ravis de vous compter parmi nous.</p>
+                    <p>EasyMedicalink est une solution complète conçue pour simplifier la gestion de votre cabinet médical, optimiser vos rendez-vous et améliorer le suivi de vos patients.</p>
+                    <p>Pour commencer, cliquez sur le bouton ci-dessous pour accéder à votre espace :</p>
+                    <a href="{login_url}" style="background: linear-gradient(45deg, #20c997, #0d9488); color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-top: 20px;">Accéder à mon compte</a>
+                </div>
+                <div class="footer">
+                    <p>&copy; {date.today().year} EasyMedicalink. Tous droits réservés.</p>
+                </div>
+            </div>
+        </body>
         </html>
         """
         
         msg = Message(
-            subject="Confirmation de création de votre compte EasyMedicalink",
+            subject="Bienvenue ! Votre compte EasyMedicalink est prêt.",
             sender=("EasyMedicalink", current_app.config['MAIL_USERNAME']),
             recipients=[recipient_email],
             html=html_body
         )
         mail.send(msg)
-        print(f"E-mail de confirmation envoyé à {recipient_email}")
+        print(f"E-mail de bienvenue envoyé à {recipient_email}")
     except Exception as e:
-        print(f"ERREUR CRITIQUE: Échec de l'envoi de l'e-mail de confirmation : {e}")
-        flash("Le compte a été créé, mais l'envoi de l'e-mail de confirmation a échoué. Contactez le support.", "warning")
+        print(f"ERREUR CRITIQUE: Échec de l'envoi de l'e-mail de bienvenue : {e}")
+        flash("Votre compte a été créé, mais l'envoi de l'e-mail de bienvenue a échoué.", "warning")
+
+def send_registration_link_email(email: str, token: str):
+    """Envoie un e-mail avec un lien pour finaliser l'enregistrement."""
+    from app import mail
+    try:
+        if current_app.debug:
+            base_url = f"http://{lan_ip()}:3000"
+        else:
+            base_url = os.environ.get('APP_BASE_URL')
+            if not base_url:
+                print("🔥 ERREUR CRITIQUE : APP_BASE_URL n'est pas définie pour le mode production !")
+                return
+
+        relative_url = url_for('login.complete_registration', token=token)
+        completion_url = f"{base_url}{relative_url}"
+        
+        print(f"Génération du lien de finalisation d'enregistrement : {completion_url}")
+
+        html_body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; color: #333;">
+                <h2>Finalisez votre inscription EasyMedicalink</h2>
+                <p>Cliquez sur le lien ci-dessous pour terminer la création de votre compte. Ce lien expirera dans 24 heures.</p>
+                <p style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
+                    <a href="{completion_url}" style="background-color: #1a73e8; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                        Terminer mon inscription
+                    </a>
+                </p>
+                <p>Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.</p>
+            </body>
+        </html>
+        """
+        msg = Message(
+            subject="Finalisez votre inscription EasyMedicalink",
+            sender=("EasyMedicalink", current_app.config['MAIL_USERNAME']),
+            recipients=[email],
+            html=html_body
+        )
+        mail.send(msg)
+        print(f"E-mail de finalisation d'inscription envoyé à {email}")
+    except Exception as e:
+        print(f"ERREUR CRITIQUE: Échec de l'envoi de l'e-mail de finalisation : {e}")
+        flash("Une erreur est survenue lors de l'envoi de l'e-mail. Veuillez réessayer.", "danger")
 
 def send_password_reset_email(email: str, token: str):
     """Envoie un e-mail avec le lien de réinitialisation de mot de passe."""
     from app import mail
     try:
-        # On vérifie si l'application est en mode debug.
-        # En local, app.debug sera True. Sur Render, il sera False.
         if current_app.debug:
-            # Mode local : on utilise l'IP du réseau local.
             base_url = f"http://{lan_ip()}:3000"
             mode = "Local (Debug)"
         else:
-            # Mode production : on utilise l'URL définie dans les variables d'environnement.
             base_url = os.environ.get('APP_BASE_URL')
             mode = "Production"
-            # Sécurité : si l'URL n'est pas définie en production, on signale une erreur.
             if not base_url:
                 print("🔥 ERREUR CRITIQUE : APP_BASE_URL n'est pas définie pour le mode production !")
                 return
@@ -154,13 +196,10 @@ def send_password_reset_email(email: str, token: str):
         flash("Une erreur est survenue lors de l'envoi de l'e-mail. Veuillez réessayer.", "danger")
 
 # --- Gestion des Fichiers et Chemins ---
-
 def _set_login_paths():
-    """Définit le chemin centralisé pour USERS_FILE sous MEDICALINK_DATA."""
-    global USERS_FILE
-    if USERS_FILE:
+    global USERS_FILE, PENDING_REGISTRATIONS_FILE
+    if USERS_FILE and PENDING_REGISTRATIONS_FILE:
         return
-
     try:
         medicalink_data_root = Path(utils.application_path) / "MEDICALINK_DATA"
         medicalink_data_root.mkdir(parents=True, exist_ok=True)
@@ -168,60 +207,54 @@ def _set_login_paths():
             ctypes.windll.kernel32.SetFileAttributesW(str(medicalink_data_root), 0x02)
     except Exception as e:
         print(f"AVERTISSEMENT: Impossible de masquer le dossier MEDICALINK_DATA: {e}")
-
     USERS_FILE = medicalink_data_root / ".users.json"
+    PENDING_REGISTRATIONS_FILE = medicalink_data_root / ".pending_registrations.json"
 
 # --- Sécurité et Hachage ---
-
 def _sign(data: bytes) -> str:
-    """Génère une signature HMAC-SHA256 pour des données."""
     return hmac.new(HMAC_KEY, data, hashlib.sha256).hexdigest()
-
 def hash_password(password: str) -> str:
-    """Hache un mot de passe en utilisant SHA256."""
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
-
 def generate_reset_token(length: int = 32) -> str:
-    """Génère un token sécurisé pour la réinitialisation de mot de passe."""
     return secrets.token_urlsafe(length)
 
-# --- Lecture et Écriture des Données Utilisateurs ---
-
-def load_users() -> Dict[str, Any]:
-    """Charge les utilisateurs et vérifie leur intégrité."""
+# --- Lecture et Écriture des Données ---
+def _load_data_from_file(file_path: Optional[Path]) -> Dict[str, Any]:
     _set_login_paths()
-    if not USERS_FILE or not USERS_FILE.exists():
+    if not file_path or not file_path.exists():
         return {}
     try:
-        raw_content = USERS_FILE.read_bytes()
+        raw_content = file_path.read_bytes()
         payload, signature = raw_content.rsplit(b"\n---SIGNATURE---\n", 1)
         if not hmac.compare_digest(_sign(payload), signature.decode()):
-            print(f"ERREUR FATALE: L'intégrité du fichier {USERS_FILE} est compromise !")
+            print(f"ERREUR FATALE: L'intégrité du fichier {file_path} est compromise !")
             return {}
         return json.loads(payload.decode("utf-8"))
-    except (ValueError, json.JSONDecodeError) as e:
-        print(f"ERREUR: Fichier {USERS_FILE} corrompu ou mal formé : {e}")
     except Exception as e:
-        print(f"ERREUR inattendue lors de la lecture de {USERS_FILE}: {e}")
+        print(f"ERREUR lors de la lecture de {file_path}: {e}")
     return {}
-
-def save_users(users: Dict[str, Any]):
-    """Sauvegarde les utilisateurs avec une signature d'intégrité."""
+def _save_data_to_file(data: Dict[str, Any], file_path: Optional[Path]):
     _set_login_paths()
-    if not USERS_FILE:
-        print("ERREUR: Chemin USERS_FILE non défini. Sauvegarde annulée.")
+    if not file_path:
+        print(f"ERREUR: Chemin de fichier non défini. Sauvegarde annulée.")
         return
     try:
-        payload = json.dumps(users, ensure_ascii=False, indent=2).encode("utf-8")
+        payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         signature = _sign(payload).encode()
-        USERS_FILE.write_bytes(payload + b"\n---SIGNATURE---\n" + signature)
+        file_path.write_bytes(payload + b"\n---SIGNATURE---\n" + signature)
     except Exception as e:
-        print(f"ERREUR: Échec de la sauvegarde des utilisateurs dans {USERS_FILE}: {e}")
+        print(f"ERREUR: Échec de la sauvegarde dans {file_path}: {e}")
+def load_users() -> Dict[str, Any]:
+    return _load_data_from_file(USERS_FILE)
+def save_users(users: Dict[str, Any]):
+    _save_data_to_file(users, USERS_FILE)
+def load_pending_registrations() -> Dict[str, Any]:
+    return _load_data_from_file(PENDING_REGISTRATIONS_FILE)
+def save_pending_registrations(pending_data: Dict[str, Any]):
+    _save_data_to_file(pending_data, PENDING_REGISTRATIONS_FILE)
 
 # --- Fonctions Utilitaires ---
-
 def lan_ip() -> str:
-    """Tente de trouver l'adresse IP sur le réseau local (LAN)."""
     ip = socket.gethostbyname(socket.gethostname())
     if ip.startswith("127."):
         try:
@@ -230,25 +263,15 @@ def lan_ip() -> str:
         except Exception:
             ip = "0.0.0.0"
     return ip
-
 def _find_user_in_centralized_users_file(target_email: str, target_password_hash: str) -> Optional[Dict]:
-    """Cherche un utilisateur par email et hash de mot de passe."""
     user = load_users().get(target_email)
     if user and user.get("password") == target_password_hash:
-        owner_email = user.get("owner", target_email)
-        return {
-            "user_data": user,
-            "admin_owner_email": owner_email,
-            "actual_role": user.get("role", "admin")
-        }
+        return {"user_data": user, "admin_owner_email": user.get("owner", target_email), "actual_role": user.get("role", "admin")}
     return None
-
 def _is_email_globally_unique(email_to_check: str) -> bool:
-    """Vérifie si un email est déjà utilisé."""
     return email_to_check not in load_users()
 
 # --- Routes du Blueprint ---
-
 @login_bp.route("/login", methods=["GET", "POST"])
 def login():
     _set_login_paths()
@@ -261,7 +284,6 @@ def login():
 
         if found_user_info:
             actual_role = found_user_info["actual_role"]
-
             is_pharmacy_role_match = (selected_role == 'pharmacie/magasin' and actual_role == 'pharmacie')
 
             if selected_role != actual_role and not is_pharmacy_role_match:
@@ -269,10 +291,7 @@ def login():
                 return redirect(url_for('login.login'))
 
             if not found_user_info["user_data"].get("active", True):
-                flash(
-                    "Votre compte est inactif. Veuillez contacter le propriétaire de l'application.", 
-                    "danger"
-                )
+                flash("Votre compte est inactif. Veuillez contacter le propriétaire de l'application.", "danger")
                 return redirect(url_for("activation.activation"))
 
             session["email"] = email
@@ -305,13 +324,52 @@ def login():
 def register():
     _set_login_paths()
     if request.method == "POST":
+        email = request.form["email"].lower().strip()
+        if not _is_email_globally_unique(email):
+            flash(f"L'adresse e-mail '{email}' est déjà utilisée par un compte actif.", "danger")
+            return redirect(url_for('login.register'))
+            
+        pending = load_pending_registrations()
+        if email in pending and datetime.now() < datetime.fromisoformat(pending[email]['expiry']):
+             flash("Un lien d'enregistrement a déjà été envoyé à cette adresse. Veuillez vérifier votre boîte de réception.", "info")
+             return redirect(url_for('login.login'))
+             
+        token, expiry = generate_reset_token(), (datetime.now() + timedelta(hours=24)).isoformat()
+        
+        pending[email] = {"token": token, "expiry": expiry}
+        save_pending_registrations(pending)
+        send_registration_link_email(email, token)
+        
+        flash(f"Étape 1 terminée ! Un e-mail a été envoyé à {email}. Veuillez cliquer sur le lien dans cet e-mail pour continuer.", "success")
+        return redirect(url_for('login.login'))
+        
+    return render_template_string(register_start_template)
+
+@login_bp.route("/register/complete/<token>", methods=["GET", "POST"])
+def complete_registration(token):
+    _set_login_paths()
+    pending = load_pending_registrations()
+    email_found, registration_data = None, None
+    for email, data in pending.items():
+        if data.get('token') == token:
+            email_found, registration_data = email, data
+            break
+            
+    if not registration_data:
+        flash("Ce lien d'enregistrement est invalide ou a déjà été utilisé.", "danger")
+        return redirect(url_for('login.register'))
+
+    if datetime.now() > datetime.fromisoformat(registration_data.get('expiry')):
+        pending.pop(email_found, None)
+        save_pending_registrations(pending)
+        flash("Votre lien d'enregistrement a expiré. Veuillez recommencer.", "danger")
+        return redirect(url_for('login.register'))
+
+    if request.method == "POST":
         f = request.form
-        email = f["email"].lower().strip()
         phone = f["phone"].strip()
 
-        if not _is_email_globally_unique(email):
-            flash(f"L'e-mail '{email}' est déjà utilisé.", "danger")
-        elif f["password"] != f["confirm"]:
+        if f["password"] != f["confirm"]:
             flash("Les mots de passe ne correspondent pas.", "danger")
         elif not phone.startswith('+') or len(phone) < 10:
             flash("Le numéro de téléphone est invalide.", "danger")
@@ -319,30 +377,25 @@ def register():
             users = load_users()
             creation_date = f["clinic_creation_date"]
             
-            new_user_details = {
-                "email": email, 
-                "clinic": f["clinic"], 
-                "creation_date": creation_date, 
-                "address": f["address"], 
-                "phone": phone
-            }
-            
-            users[email] = {
+            users[email_found] = {
                 "password": hash_password(f["password"]), "role": "admin", "clinic": f["clinic"],
                 "clinic_creation_date": creation_date, "account_creation_date": date.today().isoformat(),
-                "address": f["address"], "phone": phone, "active": True, "owner": email,
+                "address": f["address"], "phone": phone, "active": True, "owner": email_found,
                 "allowed_pages": ALL_BLUEPRINTS,
                 "account_limits": {"medecin":0, "assistante":0, "comptable":0, "biologiste":0, "radiologue":0, "pharmacie":0},
                 "activation": {"plan": f"essai_{TRIAL_DAYS}jours", "activation_date": date.today().isoformat(), "activation_code": "0000-0000-0000-0000"}
             }
             save_users(users)
             
-            send_confirmation_email(new_user_details)
+            pending.pop(email_found, None)
+            save_pending_registrations(pending)
             
-            flash(f"Compte créé avec succès ! Un e-mail de confirmation a été envoyé à {email}.", "success")
+            send_welcome_email(email_found)
+            
+            flash(f"Compte créé avec succès ! Un e-mail de bienvenue a été envoyé à {email_found}.", "success")
             return redirect(url_for('login.login'))
             
-    return render_template_string(register_template)
+    return render_template_string(register_template, email=email_found, token=token)
 
 @login_bp.route('/forgot_password', methods=['GET', 'POST'])
 def forgot_password():
@@ -350,7 +403,6 @@ def forgot_password():
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
         users = load_users()
-
         if email in users:
             token, expiry = generate_reset_token(), (datetime.now() + timedelta(hours=1)).isoformat()
             users[email]['reset_token'], users[email]['reset_expiry'] = token, expiry
@@ -660,6 +712,45 @@ login_template = '''
 </html>
 '''
 
+register_start_template = '''
+<!DOCTYPE html>
+<html lang="fr">
+{{ pwa_head()|safe }}
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Créer un compte - Étape 1</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    .btn-medical { background: linear-gradient(45deg,#1a73e8,#0d9488); color:white; }
+    body { background:#f0fafe; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+    .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body class="d-flex flex-column align-items-center justify-content-center min-vh-100 p-3">
+  <div class="card p-4 shadow w-100" style="max-width: 420px;">
+    <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
+    <h3 class="text-center mb-3"><i class="fas fa-user-plus text-info"></i> Créer un compte</h3>
+    <p class="text-center text-muted small mb-3">Veuillez saisir votre adresse e-mail. Nous vous enverrons un lien sécurisé pour finaliser votre inscription.</p>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
+    {% endwith %}
+    <form method="POST">
+      <div class="mb-3">
+          <label class="form-label small"><i class="fas fa-envelope me-2"></i>Adresse e-mail</label>
+          <input type="email" name="email" class="form-control form-control-lg" required>
+      </div>
+      <button type="submit" class="btn btn-medical btn-lg w-100">Envoyer le lien d'inscription</button>
+    </form>
+     <div class="text-center mt-3">
+      <a href="{{ url_for('login.login') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour à la connexion</a>
+    </div>
+  </div>
+</body>
+</html>
+'''
+
 register_template = '''
 <!DOCTYPE html>
 <html lang="fr">
@@ -667,30 +758,26 @@ register_template = '''
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Enregistrement - EasyMedicalink</title>
+  <title>Finaliser l'inscription - EasyMedicalink</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
     .btn-medical { background: linear-gradient(45deg,#1a73e8,#0d9488); color:white; }
     body { background:#f0fafe; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
     .app-icon { width: 100px; height: 100px; margin-bottom: 20px; border-radius: 20%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    .footer-links { font-size: 0.8rem; color: #6c757d; }
-    .footer-links a { color: #6c757d; text-decoration: none; }
-    .footer-links a:hover { text-decoration: underline; }
   </style>
 </head>
 <body class="d-flex flex-column align-items-center justify-content-center min-vh-100 p-3">
   <div class="card p-4 shadow w-100" style="max-width: 480px;">
     <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
-    <h3 class="text-center mb-3"><i class="fas fa-user-plus text-info"></i> Enregistrement</h3>
+    <h3 class="text-center mb-3"><i class="fas fa-user-plus text-info"></i> Finaliser l'inscription</h3>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
     {% endwith %}
     <form id="registerForm" method="POST">
       <div class="mb-3">
-        <label class="form-label small"><i class="fas fa-envelope me-2"></i>Email</label>
-        <input type="email" name="email" class="form-control form-control-lg" required>
+        <label class="form-label small"><i class="fas fa-envelope me-2"></i>Email (vérifié)</label>
+        <input type="email" name="email" class="form-control form-control-lg" value="{{ email }}" readonly>
       </div>
       <div class="mb-3 row g-2">
         <div class="col-12 col-md-6">
@@ -720,26 +807,9 @@ register_template = '''
         <label class="form-label small"><i class="fas fa-phone me-2"></i>Téléphone (Whatsapp)</label>
         <input type="tel" name="phone" class="form-control form-control-lg" placeholder="ex: +212XXXXXXXXX" required pattern="^\\+\\d{9,}$">
       </div>
-      <button type="submit" class="btn btn-medical btn-lg w-100">S'enregistrer</button>
+      <button type="submit" class="btn btn-medical btn-lg w-100">Finaliser et créer mon compte</button>
     </form>
-    <div class="text-center mt-3">
-      <a href="{{ url_for('login.login') }}" class="btn btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour Connexion</a>
-    </div>
   </div>
-  <div class="text-center mt-3 footer-links">
-    <span>Développé par SastoukaDigital</span>
-  </div>
-  <script>
-    document.getElementById('registerForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      Swal.fire({
-        title: 'Important',
-        text: 'Veuillez conserver précieusement ces informations. Elles seront nécessaires pour récupérer votre mot de passe.',
-        icon: 'info',
-        confirmButtonText: 'Compris'
-      }).then((result) => { if (result.isConfirmed) { this.submit(); } });
-    });
-  </script>
 </body>
 </html>
 '''
