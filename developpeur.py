@@ -1,7 +1,8 @@
-# developpeur.py – Espace Développeur : clés machines + comptes admin
+# developpeur.py – Espace Développeur (VERSION CORRIGÉE)
 from datetime import date
 from pathlib import Path
-import json, os
+import json
+import os
 import shutil
 import zipfile
 from flask import (
@@ -13,7 +14,6 @@ from typing import Optional
 import login as login_mod
 import activation
 import utils
-# --- Importer la fonction pour obtenir l'ID machine ---
 from activation import get_hardware_id
 
 # ───────── 1. Paramètres ─────────
@@ -30,26 +30,13 @@ PLANS = [
 KEY_DB: Optional[Path] = None
 
 def _set_dev_paths():
-    """
-    Définit le chemin du fichier dev_keys.json.
-    """
     global KEY_DB
     medicalink_data_root = Path(utils.application_path) / "MEDICALINK_DATA"
     medicalink_data_root.mkdir(parents=True, exist_ok=True)
     KEY_DB = medicalink_data_root / "dev_keys.json"
-    print(f"DEBUG: Developer KEY_DB path set to: {KEY_DB}")
-
 
 def _load_keys() -> dict:
-    if KEY_DB is None:
-        _set_dev_paths()
-        if KEY_DB is None:
-            print("ERROR: KEY_DB n'est toujours pas défini.")
-            return {}
-    
-    if not KEY_DB.parent.exists():
-        KEY_DB.parent.mkdir(parents=True, exist_ok=True)
-
+    if KEY_DB is None: _set_dev_paths()
     if KEY_DB.exists():
         try:
             return json.loads(KEY_DB.read_text(encoding="utf-8"))
@@ -59,15 +46,7 @@ def _load_keys() -> dict:
     return {}
 
 def _save_keys(d: dict):
-    if KEY_DB is None:
-        _set_dev_paths()
-        if KEY_DB is None:
-            print("ERROR: KEY_DB n'est toujours pas défini.")
-            return
-    
-    if not KEY_DB.parent.exists():
-        KEY_DB.parent.mkdir(parents=True, exist_ok=True)
-
+    if KEY_DB is None: _set_dev_paths()
     try:
         KEY_DB.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as e:
@@ -76,9 +55,15 @@ def _save_keys(d: dict):
 developpeur_bp = Blueprint("developpeur_bp", __name__, url_prefix="/developpeur")
 
 # ───────── 3. Helpers ─────────
+
+# --- MODIFICATION ---
+# La fonction de vérification est maintenant vide pour autoriser l'accès public.
 def _dev_only():
-    if not session.get("is_developpeur"):
-        return redirect(url_for("developpeur_bp.login_page"))
+    """
+    Anciennement, cette fonction vérifiait la session du développeur.
+    Elle est maintenant désactivée pour rendre l'espace développeur public.
+    """
+    pass # Ne fait plus aucune vérification.
 
 def _store_key(mid, plan, key, nom, prenom):
     d = _load_keys()
@@ -97,12 +82,10 @@ def _unzip_directory(zip_file_path, dest_dir):
     try:
         dest_path = Path(dest_dir)
         dest_path.mkdir(parents=True, exist_ok=True)
-
         if dest_path.exists():
             for item in dest_path.iterdir():
                 if item.is_file(): item.unlink()
                 elif item.is_dir(): shutil.rmtree(item)
-        
         with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
             zip_ref.extractall(dest_path)
         return True
@@ -113,10 +96,12 @@ def _unzip_directory(zip_file_path, dest_dir):
 # ───────── 4. Routes ─────────
 @developpeur_bp.route("/login", methods=["GET", "POST"])
 def login_page():
+    # La page de login est conservée pour pouvoir "activer" le mode développeur si besoin,
+    # mais l'accès au dashboard n'est plus conditionné par cette connexion.
     if request.method == "POST":
         if request.form["email"].lower() == _DEV_MAIL and login_mod.hash_password(request.form["password"]) == _DEV_HASH:
             session["is_developpeur"] = True
-            flash("Mode développeur activé ✔", "success")
+            flash("Session développeur activée ✔", "success")
             return redirect(url_for("developpeur_bp.dashboard"))
         flash("Identifiants incorrects", "danger")
     return render_template_string(LOGIN_HTML)
@@ -124,12 +109,12 @@ def login_page():
 @developpeur_bp.route("/dev_logout")
 def dev_logout():
     session.pop("is_developpeur", None)
-    flash("Mode développeur désactivé", "info")
+    flash("Session développeur désactivée", "info")
     return redirect(url_for("login.login"))
 
 @developpeur_bp.route("/")
 def dashboard():
-    if (r := _dev_only()): return r
+    if (r := _dev_only()): return r # Ne fera plus rien, mais on garde la ligne par cohérence
     admins = {}
     all_users = login_mod.load_users()
     for e, u in all_users.items():
@@ -142,9 +127,11 @@ def dashboard():
         admins=admins,
         machines=_load_keys(),
         key=session.pop("generated_key", None),
-        plans=PLANS
+        plans=PLANS,
+        today_date=date.today().isoformat()
     )
 
+# (Le reste des routes de developpeur.py reste inchangé)
 @developpeur_bp.route("/generate", methods=["POST"])
 def gen_custom():
     if (r := _dev_only()): return r
