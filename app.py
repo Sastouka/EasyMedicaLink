@@ -43,7 +43,15 @@ def create_app():
     app.secret_key = os.environ.get("SECRET_KEY")
     app.permanent_session_lifetime = timedelta(days=7)
     
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///medical_assistant.db'
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url and db_url.startswith("postgres://"):
+        # Correction pour la compatibilité avec SQLAlchemy
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    # Utilise la base de données PostgreSQL si disponible (sur Render), sinon SQLite (en local)
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///medical_assistant.db'
+
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     app.config['MAIL_SERVER'] = 'smtp.gmail.com'
