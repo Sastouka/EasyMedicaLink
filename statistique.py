@@ -72,20 +72,24 @@ def stats_home():
             if not logged_in_full_name:
                 logged_in_full_name = None
 
-    # 2. Chargement des données (en utilisant la fonction _load_all_excels améliorée)
+    # 2. Chargement des données
     df_map = _load_all_excels(utils.EXCEL_FOLDER)
 
-    # Extraire les DataFrames, en gérant les cas où un fichier/une feuille pourrait manquer
+    # Extraction des DataFrames
     df_consult_raw = df_map.get("ConsultationData.xlsx", pd.DataFrame())
-    df_facture_raw = df_map.get("factures.xlsx", pd.DataFrame())
+    factures_data_loaded = df_map.get("factures.xlsx", pd.DataFrame())
+    if isinstance(factures_data_loaded, dict):
+        # Si le fichier a plusieurs feuilles, prenez la feuille nommée 'Factures' ou la première
+        df_facture_raw = factures_data_loaded.get("Factures", next(iter(factures_data_loaded.values()), pd.DataFrame()))
+    else:
+        # Sinon, utilisez le DataFrame directement
+        df_facture_raw = factures_data_loaded
     df_rdv_raw = df_map.get("DonneesRDV.xlsx", pd.DataFrame())
-
     compta_data = df_map.get("Comptabilite.xlsx", {})
     df_comptabilite_recettes_raw = compta_data.get("Recettes", pd.DataFrame())
     df_comptabilite_depenses_raw = compta_data.get("Depenses", pd.DataFrame())
     df_comptabilite_salaires_raw = compta_data.get("Salaires", pd.DataFrame())
     df_comptabilite_tiers_payants_raw = compta_data.get("TiersPayants", pd.DataFrame())
-
     pharmacie_data_loaded = df_map.get("Pharmacie.xlsx", pd.DataFrame())
     
     if isinstance(pharmacie_data_loaded, dict):
@@ -95,38 +99,50 @@ def stats_home():
         df_pharmacie_inventory_raw = pharmacie_data_loaded
         df_pharmacie_movements_raw = pd.DataFrame()
 
-    # 3. Récupérer les filtres des arguments de la requête
-    start_str = request.args.get("start_date", "")
-    end_str = request.args.get("end_date", "")
-    doctor_filter_email = "" # Removed doctor filter from UI, so always empty string
+    # 3. Récupérer et définir les filtres de date (AVEC PÉRIODE PAR DÉFAUT)
+    start_str = request.args.get("start_date")
+    end_str = request.args.get("end_date")
+    start_dt, end_dt = None, None
+
+    # Si aucune date n'est fournie, appliquer le filtre par défaut
+    if not start_str and not end_str:
+        today = datetime.now().date()
+        start_dt = datetime(today.year, 1, 1)
+        end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+        start_str = start_dt.strftime('%Y-%m-%d')
+        end_str = end_dt.strftime('%Y-%m-%d')
+    else:
+        # Sinon, utiliser les dates fournies par l'utilisateur
+        try:
+            if start_str:
+                start_dt = datetime.strptime(start_str, "%Y-%m-%d")
+            if end_str:
+                end_dt = datetime.strptime(end_str, "%Y-%m-%d")
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+        except ValueError:
+            flash("Format de date invalide, utilisez YYYY-MM-DD.", "warning")
+            return redirect(url_for(".stats_home"))
+
+    doctor_filter_email = "" 
     selected_charts_param = request.args.getlist('selected_charts')
     no_charts_selected_indicator = request.args.get('no_charts_selected')
 
     if no_charts_selected_indicator == 'true':
         selected_charts = []
+    elif not selected_charts_param and (start_str or end_str): # If dates are set, but no charts, keep selection
+        selected_charts = [
+            "consultChart", "caChart", "genderChart", "ageChart", "salariesMonthlyChart",
+            "rdvDoctorChart", "expensesCategoryChart", "revenueTypeChart", 
+            "topProductsChart", "movementTypeChart"
+        ]
     elif not selected_charts_param:
         selected_charts = [
-            "consultChart", "caChart", "genderChart", "ageChart",
-            "salariesMonthlyChart",
-            "rdvDoctorChart", "expensesCategoryChart",
-            "revenueTypeChart", "topProductsChart", "movementTypeChart"
+            "consultChart", "caChart", "genderChart", "ageChart", "salariesMonthlyChart",
+            "rdvDoctorChart", "expensesCategoryChart", "revenueTypeChart", 
+            "topProductsChart", "movementTypeChart"
         ]
     else:
         selected_charts = selected_charts_param
-
-
-    start_dt = None
-    end_dt = None
-
-    try:
-        if start_str:
-            start_dt = datetime.strptime(start_str, "%Y-%m-%d")
-        if end_str:
-            end_dt = datetime.strptime(end_str, "%Y-%m-%d")
-            end_dt = end_dt.replace(hour=23, minute=59, second=59)
-    except ValueError:
-        flash("Format de date invalide, utilisezYYYY-MM-DD.", "warning")
-        return redirect(url_for(".stats_home"))
 
     # 4. Traiter et filtrer les DataFrames
     df_rdv_for_processing = df_rdv_raw.copy()
@@ -134,49 +150,21 @@ def stats_home():
         doctor_email_col = _find_column(df_rdv_for_processing, ["Medecin_Email", "Email Médecin", "Médecin"])
         if doctor_email_col:
             df_rdv_for_processing = df_rdv_for_processing[df_rdv_for_processing[doctor_email_col] == doctor_filter_email]
-        else:
-            logging.warning("Colonne 'Medecin_Email' non trouvée pour le filtrage par médecin dans les RDV.")
 
     df_consult = process_consultations(df_consult_raw, start_dt, end_dt)
-    print(f"DEBUG: df_consult after date/doctor filter (head):\n{df_consult.head()}")
-    print(f"DEBUG: df_consult after date/doctor filter (shape): {df_consult.shape}")
-
     df_facture = process_factures(df_facture_raw, start_dt, end_dt)
     df_rdv = process_rdv(df_rdv_for_processing, start_dt, end_dt)
     df_comptabilite_recettes = process_comptabilite_recettes(df_comptabilite_recettes_raw, start_dt, end_dt)
     df_comptabilite_depenses = process_comptabilite_depenses(df_comptabilite_depenses_raw, start_dt, end_dt)
     df_comptabilite_salaires = _process_dataframe(df_comptabilite_salaires_raw, date_keys=["Mois_Annee"], numeric_cols={"Total_Brut": 0.0}, start_dt=start_dt, end_dt=end_dt)
     df_comptabilite_tiers_payants = process_comptabilite_tiers_payants(df_comptabilite_tiers_payants_raw, start_dt, end_dt)
-    
-    # AJOUT : Appliquer les filtres de date à l'inventaire pour une analyse périodique.
-    # Cette modification suppose que la colonne "Date_Enregistrement" (ou équivalent)
-    # dans votre fichier d'inventaire représente la date à laquelle l'état de stock est valide.
     df_pharmacie_inventory = process_pharmacie_inventory(df_pharmacie_inventory_raw, start_dt, end_dt)
-    
-    print(f"DEBUG STATS_HOME: df_pharmacie_inventory est vide après chargement/traitement: {df_pharmacie_inventory.empty}")
-    if not df_pharmacie_inventory.empty:
-        print(f"DEBUG STATS_HOME: df_pharmacie_inventory.head() :\n{df_pharmacie_inventory.head()}")
-        print(f"DEBUG STATS_HOME: Colonnes de df_pharmacie_inventory: {df_pharmacie_inventory.columns.tolist()}")
-        if 'Quantité' in df_pharmacie_inventory.columns and 'Prix_Achat' in df_pharmacie_inventory.columns:
-            print(f"DEBUG STATS_HOME: Type de 'Quantité': {df_pharmacie_inventory['Quantité'].dtype}")
-            print(f"DEBUG STATS_HOME: Type de 'Prix_Achat': {df_pharmacie_inventory['Prix_Achat'].dtype}")
-            print(f"DEBUG STATS_HOME: Somme de 'Quantité': {df_pharmacie_inventory['Quantité'].sum()}")
-            print(f"DEBUG STATS_HOME: Somme de 'Prix_Achat': {df_pharmacie_inventory['Prix_Achat'].sum()}")
-            print(f"DEBUG STATS_HOME: Valeurs uniques de 'Quantité': {df_pharmacie_inventory['Quantité'].unique()}")
-            print(f"DEBUG STATS_HOME: Valeurs uniques de 'Prix_Achat': {df_pharmacie_inventory['Prix_Achat'].unique()}")
-            if df_pharmacie_inventory['Quantité'].isna().any():
-                print("DEBUG STATS_HOME: Des valeurs NaN sont présentes dans la colonne 'Quantité' après conversion.")
-            if df_pharmacie_inventory['Prix_Achat'].isna().any():
-                print("DEBUG STATS_HOME: Des valeurs NaN sont présentes dans la colonne 'Prix_Achat' après conversion.")
-        else:
-            print("DEBUG STATS_HOME: Colonnes 'Quantité' ou 'Prix_Achat' manquantes dans df_pharmacie_inventory.")
-
     df_pharmacie_movements = process_pharmacie_movements(df_pharmacie_movements_raw, start_dt, end_dt)
 
-    # 5. Filtrage des patients (maintenant dérivé des consultations)
+    # 5. Filtrage des patients
     df_patient = process_patients_from_consultations(df_consult)
 
-    # 6. Vérifier la disponibilité des données pour l'exportation et l'affichage général
+    # 6. Vérifier la disponibilité des données
     data_available = not (df_consult.empty and df_facture.empty and df_patient.empty and df_rdv.empty and
                           df_comptabilite_recettes.empty and df_comptabilite_depenses.empty and
                           df_pharmacie_inventory.empty and df_pharmacie_movements.empty and
@@ -187,78 +175,56 @@ def stats_home():
 
     # 7. Calculs des KPI
     metrics = {
-        "total_factures":  0,
-        "total_patients": 0,
-        "total_revenue":  0.0,
-        "total_appointments": 0,
+        "total_factures": len(df_facture),
+        "total_patients": df_patient[_find_column(df_patient, ["patient_id", "Patient ID", "ID Patient"])].nunique() if not df_patient.empty and _find_column(df_patient, ["patient_id", "Patient ID", "ID Patient"]) else 0,
+        "total_revenue": 0.0,
+        "total_appointments": len(df_rdv),
         "daily_appointments": 0,
-        "total_stock_value": 0.0,
+        "total_stock_value": _total_stock_value(df_pharmacie_inventory),
         "total_expenses": 0.0,
         "net_profit": 0.0,
     }
 
-    if not df_facture.empty:
-        metrics["total_factures"] = len(df_facture)
+    # AJOUTEZ CE BLOC À LA PLACE
+    # --- Calcul fiable des RDV du jour ---
+    date_col_rdv = _find_column(df_rdv_raw, ["date", "jour", "Date RDV", "Date Rendez-vous"])
+    daily_appointments_count = 0
 
-    if not df_patient.empty:
-        patient_id_col = _find_column(df_patient, ["patient_id", "Patient ID", "ID Patient"])
-        if patient_id_col:
-            metrics["total_patients"] = df_patient[patient_id_col].nunique()
-        else:
-            logging.warning("Colonne 'patient_id' introuvable pour le KPI 'Patients'.")
-            metrics["total_patients"] = 0
+    if date_col_rdv and not df_rdv_raw.empty:
+        # On fait une copie temporaire pour travailler dessus
+        temp_df = df_rdv_raw.copy()
+        
+        # On convertit la colonne de date en s'assurant que les erreurs ne bloquent pas tout
+        temp_df[date_col_rdv] = pd.to_datetime(temp_df[date_col_rdv], errors='coerce')
+        
+        # On supprime les lignes où la conversion de date a échoué
+        temp_df.dropna(subset=[date_col_rdv], inplace=True)
+        
+        # On récupère la date d'aujourd'hui (sans l'heure)
+        today_date = datetime.now().date()
+        
+        # On filtre le DataFrame en comparant UNIQUEMENT la partie "date" (jour/mois/année)
+        today_s_rdv = temp_df[temp_df[date_col_rdv].dt.date == today_date]
+        
+        # Le compte final est la longueur de ce DataFrame filtré
+        daily_appointments_count = len(today_s_rdv)
 
-    if not df_rdv.empty:
-        metrics["total_appointments"] = len(df_rdv)
+    metrics["daily_appointments"] = daily_appointments_count
+    # --- Fin du calcul fiable ---
 
-    df_rdv_today_unfiltered = process_rdv(
-        df_rdv_raw.copy(),
-        start_dt=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-        end_dt=datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
-    )
-    metrics["daily_appointments"] = len(df_rdv_today_unfiltered) if not df_rdv_today_unfiltered.empty else 0
-
-    if not df_pharmacie_inventory.empty:
-        metrics["total_stock_value"] = _total_stock_value(df_pharmacie_inventory)
-
-    total_recettes_directes = 0.0
-    total_tiers_payants_recus = 0.0
-    total_depenses_directes = 0.0
-    total_salaires_brut = 0.0
-
-    montant_recette_col = _find_column(df_comptabilite_recettes, ["Montant", "Montant Recette"])
-    if not df_comptabilite_recettes.empty and montant_recette_col:
-        total_recettes_directes = df_comptabilite_recettes[montant_recette_col].sum()
-
-    montant_recu_tp_col = _find_column(df_comptabilite_tiers_payants, ["Montant_Recu", "Montant Recu"])
-    statut_tp_col = _find_column(df_comptabilite_tiers_payants, ["Statut"])
-    if not df_comptabilite_tiers_payants.empty and montant_recu_tp_col and statut_tp_col:
-        df_tp_processed = _process_dataframe(df_comptabilite_tiers_payants, numeric_cols={montant_recu_tp_col: 0.0})
-        total_tiers_payants_recus = df_tp_processed[
-            df_tp_processed[statut_tp_col].isin(['Réglé', 'Partiellement réglé'])
-        ][montant_recu_tp_col].sum()
-    
+    total_recettes_directes = df_comptabilite_recettes[_find_column(df_comptabilite_recettes, ["Montant"])].sum() if not df_comptabilite_recettes.empty and _find_column(df_comptabilite_recettes, ["Montant"]) else 0
+    total_tiers_payants_recus = df_comptabilite_tiers_payants[df_comptabilite_tiers_payants[_find_column(df_comptabilite_tiers_payants, ["Statut"])].isin(['Réglé', 'Partiellement réglé'])][_find_column(df_comptabilite_tiers_payants, ["Montant_Recu"])].sum() if not df_comptabilite_tiers_payants.empty and _find_column(df_comptabilite_tiers_payants, ["Montant_Recu"]) and _find_column(df_comptabilite_tiers_payants, ["Statut"]) else 0
     metrics["total_revenue"] = round(total_recettes_directes + total_tiers_payants_recus, 2)
 
-    montant_depense_col = _find_column(df_comptabilite_depenses, ["Montant", "Montant Dépense"])
-    if not df_comptabilite_depenses.empty and montant_depense_col:
-        total_depenses_directes = df_comptabilite_depenses[montant_depense_col].sum()
-
-    montant_salaire_col = _find_column(df_comptabilite_salaires, ["Total_Brut"])
-    if not df_comptabilite_salaires.empty and montant_salaire_col:
-        df_salaires_processed = _process_dataframe(df_comptabilite_salaires, numeric_cols={montant_salaire_col: 0.0})
-        total_salaires_brut = df_salaires_processed[montant_salaire_col].sum()
-
+    total_depenses_directes = df_comptabilite_depenses[_find_column(df_comptabilite_depenses, ["Montant"])].sum() if not df_comptabilite_depenses.empty and _find_column(df_comptabilite_depenses, ["Montant"]) else 0
+    total_salaires_brut = df_comptabilite_salaires[_find_column(df_comptabilite_salaires, ["Total_Brut"])].sum() if not df_comptabilite_salaires.empty and _find_column(df_comptabilite_salaires, ["Total_Brut"]) else 0
     metrics["total_expenses"] = round(total_depenses_directes + total_salaires_brut, 2)
-
-    total_revenues_net_profit = total_recettes_directes + total_tiers_payants_recus
-    total_expenses_net_profit = total_depenses_directes + total_salaires_brut
-    net_profit_value = total_revenues_net_profit - total_expenses_net_profit
-    metrics["net_profit"] = round(net_profit_value, 2)
+    metrics["net_profit"] = round(metrics["total_revenue"] - metrics["total_expenses"], 2)
 
     # 8. Données Chart.js et analyse textuelle
     charts = {}
-
+    
+    # ... (le reste de la fonction pour le calcul des graphiques reste inchangé) ...
     if not df_consult.empty:
         date_col = _find_column(df_consult, ["consultation_date", "date_rdv", "Date RDV", "Date", "Date Consultation"])
         if date_col:
@@ -486,10 +452,11 @@ def stats_home():
         start_date=start_str,
         end_date=end_str,
         today=datetime.now().strftime("%Y-%m-%d"),
+        logged_in_doctor_name=logged_in_full_name,
         data_available=data_available,
         unique_doctors=unique_doctors,
         selected_doctor="",
-        selected_charts=selected_charts # Fixed: ensure this is passed correctly.
+        selected_charts=selected_charts
     )
 
 def _load_excel_safe(path: str) -> Union[pd.DataFrame, dict]:
@@ -726,21 +693,28 @@ def process_patients_from_consultations(df_consult: pd.DataFrame) -> pd.DataFram
     unique_patients_df = patient_demographics.drop_duplicates(subset=[patient_id_col], keep='first')
 
     if date_naissance_col and date_naissance_col in unique_patients_df.columns:
-        # Use a similar robust parsing for date_of_birth
+        # LOGIQUE DE PARSING DE DATE AMÉLIORÉE ET HARMONISÉE
         date_strings_patient = unique_patients_df[date_naissance_col].astype(str).str.strip()
         parsed_dates_patient = pd.Series(pd.NaT, index=date_strings_patient.index)
+        
+        # Utilisation de la liste de formats complète, identique à _process_dataframe
         common_formats = [
-            '%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%Y/%m/%d', # common date formats
-            '%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M:%S' # if time is present
+            '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d',
+            '%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M', '%d/%m/%Y',
+            '%d-%m-%Y %H:%M:%S', '%d-%m-%Y %H:%M', '%d-%m-%Y',
+            '%Y/%m/%d %H:%M:%S', '%Y/%m/%d %H:%M', '%Y/%m/%d',
+            '%Y-%m', '%m/%Y',
         ]
+        
         for fmt in common_formats:
             unparsed_mask_patient = parsed_dates_patient.isna()
             if not unparsed_mask_patient.any():
                 break
             parsed_dates_patient[unparsed_mask_patient] = pd.to_datetime(date_strings_patient[unparsed_mask_patient], format=fmt, errors='coerce')
         
+        # Fallback pour les formats non reconnus
         if parsed_dates_patient.isna().any():
-            parsed_dates_patient[parsed_dates_patient.isna()] = pd.to_datetime(date_strings_patient[parsed_dates_patient.isna()], errors='coerce', dayfirst=True) # Fallback
+            parsed_dates_patient[parsed_dates_patient.isna()] = pd.to_datetime(date_strings_patient[parsed_dates_patient.isna()], errors='coerce', dayfirst=True)
 
         unique_patients_df[date_naissance_col] = parsed_dates_patient
         unique_patients_df = unique_patients_df.dropna(subset=[date_naissance_col])
@@ -1010,7 +984,7 @@ _TEMPLATE = r"""
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>{% include '_floating_assistant.html' %} 
 
 <style>
   :root {

@@ -1,0 +1,306 @@
+
+EasyMedicaLink
+ EasyMedicaLink
+ Guide d'utilisation
+
+Introduction
+Bienvenue dans le guide d'utilisation d'EasyMedicaLink ! Cette application a été conçue pour simplifier la gestion quotidienne de votre clinique ou cabinet médical.
+
+Ce guide vous accompagnera étape par étape pour maîtriser toutes les fonctionnalités.
+
+Aperçu des Modules
+EasyMedicaLink est organisé en plusieurs modules, chacun dédié à une facette de la gestion de votre clinique. L'accès à certains modules dépendra de votre rôle.
+
+
+Module	Fonctionnalité principale	Rôles typiques
+ Administration	Gestion des utilisateurs, paramètres généraux, licences.	Admin
+ Patients	Base de données patients, badges, transfert vers consultation.	Admin, Assistante, Médecin
+ Rendez-vous (RDV)	Prise de rendez-vous, gestion de la salle d'attente.	Admin, Assistante, Médecin
+ Consultation	Enregistrement des détails de consultation, ordonnances, certificats.	Médecin
+ Facturation	Émission de factures, enregistrement des paiements, rapports financiers.	Admin, Comptable, Assistante
+ Biologie	Gestion des analyses biologiques et leurs résultats.	Biologiste, Médecin, Admin
+ Radiologie	Gestion des analyses radiologiques et leurs résultats.	Radiologue, Médecin, Admin
+ Pharmacie & Stock	Inventaire des produits, mouvements de stock, alertes.	Pharmacien/Magasinier, Admin
+ Comptabilité	Gestion des recettes, dépenses, salaires, documents fiscaux.	Comptable, Admin
+ Statistiques	Tableaux de bord, KPIs, graphiques d'analyse d'activité.	Admin, Médecin
+ Assistant IA	Assistant médical pour aide à la décision et analyse de documents.	Admin, Médecin
+
+Guide Complet d'EasyMedicaLink
+Ce document a été conçu pour vous accompagner lors de vos premiers pas et dans votre utilisation quotidienne d'EasyMedicaLink. Nous verrons ensemble comment créer votre compte, activer votre licence, et prendre en main chaque module pour configurer l'application selon les besoins de votre clinique.
+
+La page de Connexion et d'Enregistrement
+Votre première interaction avec l'application se fera via La page de connexion. C'est ici que les utilisateurs s'identifient pour accéder à leur espace de travail, que les nouveaux administrateurs créent leur compte et que les mots de passe oubliés peuvent être récupérés.
+
+Pour vous connecter, la procédure est simple. Vous devrez d'abord sélectionner votre rôle au sein de la clinique, qu'il s'agisse d'administrateur, de médecin ou d'assistante, car ce choix détermine les fonctionnalités qui vous seront présentées. Ensuite, il vous suffira de saisir l'adresse e-mail associée à votre compte ainsi que votre mot de passe personnel. Pour faciliter les connexions futures, la page affiche également des QR codes qui permettent un accès rapide depuis un autre appareil sur le même réseau, ainsi que des liens pour télécharger la version de bureau de l'application pour Windows.
+
+La création d'un compte est une étape réservée à l'administrateur principal de la clinique. Le processus est sécurisé et se déroule en deux temps. D'abord, sur la page d'accueil, vous cliquerez sur "Créer un compte" et fournirez votre adresse e-mail. Un message contenant un lien de finalisation unique, valable 24 heures, vous sera alors envoyé. En cliquant sur ce lien, vous accéderez à un formulaire pour définir votre mot de passe et renseigner les informations de votre établissement, comme son nom, sa date de création, son adresse et son numéro de téléphone. Une fois le formulaire validé, votre compte sera actif et un e-mail de bienvenue vous sera adressé. Nous vous conseillons de conserver précieusement ces informations, car elles pourraient être utiles pour la récupération de votre compte.
+
+En cas d'oubli de votre mot de passe, vous pouvez simplement cliquer sur le lien "Récupération" sur la page de connexion. Après avoir entré votre adresse e-mail, vous recevrez un lien, valable une heure, pour en définir un nouveau.
+
+La page d'Activation
+Ce module veille à ce que votre application dispose d'une licence valide. Si votre période d'essai arrive à son terme ou si votre abonnement a expiré, vous serez automatiquement dirigé vers cette page. Vous y trouverez l'identifiant unique de votre machine ("ID machine"), une information essentielle pour lier la licence à votre poste de travail.
+
+Pour activer votre licence, vous disposez de deux options. La première consiste à souscrire à un abonnement payant via PayPal, avec des formules pour un mois, un an, ou une durée illimitée. À la création de votre compte, une période d'essai de sept jours est offerte automatiquement. Une fois cette période écoulée, le paiement en ligne activera instantanément votre licence. La seconde option est la saisie manuelle d'une clé d'activation. Si notre support technique vous a fourni une clé, il vous suffira de l'entrer dans le champ prévu à cet effet pour réactiver votre accès. Si vous rencontrez la moindre difficulté, nos coordonnées de contact sont disponibles au bas de la page pour vous assister.
+
+La page d'Administration
+Accessible uniquement aux utilisateurs ayant le rôle d'administrateur, ce module est le véritable centre de contrôle de votre clinique numérique. Il offre une maîtrise complète sur la configuration de l'application, la gestion des comptes utilisateurs et la sécurité de vos données.
+
+Dans la section des paramètres généraux, vous pourrez personnaliser l'application pour qu'elle corresponde parfaitement à l'identité de votre clinique. Vous pourrez y modifier le nom de l'établissement, le nom du médecin principal affiché, ainsi que le lieu. C'est également ici que vous choisirez le thème visuel de l'interface, définirez la devise utilisée pour la facturation et ajusterez le taux de TVA. Enfin, vous pourrez configurer les créneaux horaires pour la prise de rendez-vous en ligne par les patients.
+
+La gestion des comptes utilisateurs est une autre fonctionnalité centrale. Vous pouvez y créer les accès pour tous les membres de votre personnel, qu'ils soient médecins, assistants, ou comptables. Pour chaque nouvel utilisateur, vous pourrez définir avec précision les modules auxquels il aura accès, garantissant ainsi que chacun ne voie que les informations pertinentes pour sa fonction. Le tableau de bord vous offre une vue d'ensemble de tous les comptes, vous permettant de modifier leurs informations, d'activer ou de désactiver temporairement leur accès, ou de les supprimer définitivement.
+
+Pour fluidifier le travail lors des consultations, vous avez la possibilité de personnaliser les listes de suggestions pour les médicaments, les analyses biologiques et les examens de radiologie. Ces listes préremplies accéléreront considérablement la saisie des ordonnances et des demandes d'examen.
+
+La page d'administration vous permet aussi de gérer le portail patient. Vous y trouverez le lien unique et le QR code à communiquer à vos patients pour qu'ils puissent prendre rendez-vous en ligne. Vous pourrez également définir des périodes d'indisponibilité, comme des vacances ou des jours fériés, durant lesquelles la prise de rendez-vous sera bloquée.
+
+Enfin, la fonctionnalité la plus essentielle pour la sécurité de vos informations est la sauvegarde et la restauration. Vous pouvez à tout moment télécharger une sauvegarde complète de vos données sous la forme d'une archive ZIP. Ce fichier contiendra absolument tout : la configuration, les bases de données des patients, les consultations, la facturation, ainsi que les logos et images que vous avez importés. Il est vivement recommandé de faire des sauvegardes régulières. En cas de besoin, par exemple lors d'un changement d'ordinateur, vous pourrez utiliser la fonction d'importation pour restaurer l'intégralité de vos données à partir de ce fichier ZIP. Soyez toutefois vigilant, car une restauration remplacera toutes les données existantes par celles de la sauvegarde.
+
+
+2. Accueil (Tableau de Bord Principal)
+Après une connexion réussie, vous arrivez sur la page d'accueil. C'est votre centre de commande, offrant un accès rapide à tous les modules de l'application via des icônes interactives.
+
+Page d'Organisation de l'Accueil
+La page d'accueil est divisée en plusieurs sections clés :
+
+En-tête de la Clinique : Affiche le nom de votre clinique (ex: "EasyMedicaLink"), le nom du médecin connecté (ex: "NOM MEDECIN") et le lieu (ex: "LIEU"), ainsi que la date du jour (ex: "07/09/2025").
+Icônes des Modules : Une grille d'icônes représente chaque module de l'application. Vous pouvez les glisser-déposer pour les réorganiser selon vos préférences. Un simple clic sur une icône vous mènera au module correspondant.
+Menu Latéral () : Accessible en cliquant sur l'icône en haut à gauche. Il contient des options rapides comme la Déconnexion () et la Modification de votre mot de passe ().
+Chargement de la page...
+Astuce : Les icônes des modules sont dynamiques. Seuls les modules auxquels votre rôle a accès seront visibles ici, garantissant une interface épurée et pertinente pour chaque utilisateur.
+
+4. Module Rendez-vous (RDV)
+La page RDV, accessible via l'icône  sur le tableau de bord, est conçu pour gérer efficacement les rendez-vous des patients, aussi bien pour le personnel de la clinique que pour les patients eux-mêmes via la prise de RDV en ligne.
+
+Page Principale : Gestion des RDV (Côté Clinique)
+Cette page est votre interface pour visualiser, ajouter, modifier et gérer tous les rendez-vous de votre clinique.
+
+Formulaire de Prise de RDV : Situé en haut de page, il permet d'enregistrer manuellement un nouveau rendez-vous. C'est un processus en deux étapes :
+Étape 1 : Identité Patient () : Saisissez l'ID Patient () (qui peut auto-remplir les autres champs si le patient existe déjà), son Nom, Prénom, Sexe, Date de naissance, Téléphone et ses Antécédents médicaux. Le bouton "Suivant" () vous mène à l'étape 2.
+Étape 2 : Détails du RDV () : Choisissez la Date souhaitée (), le Médecin () et l'Heure souhaitée () parmi les créneaux disponibles. Le bouton "Confirmer le RDV" () valide le rendez-vous.
+Filtres de RDV : Une barre de recherche et un sélecteur de date vous permettent de filtrer les rendez-vous affichés dans le tableau principal.
+Bouton "Filtrer" () : Applique le filtre de date.
+Bouton "Tous" () : Réinitialise les filtres et affiche tous les rendez-vous enregistrés.
+Rendez-vous du Jour : Une section dédiée affiche les rendez-vous prévus pour la date actuelle (aujourd'hui), permettant un accès rapide à la consultation pour les patients en attente. Un bouton "Consultation" () est disponible pour chaque RDV.
+Tableau des Rendez-vous Confirmés : Une liste détaillée de tous les rendez-vous enregistrés. Pour chaque entrée, vous pouvez :
+Bouton "Consultation" () : Passe directement à l'enregistrement d'une consultation pour ce patient.
+Bouton "Modifier" () : Ouvre le formulaire de RDV avec les informations pré-remplies pour modification.
+Bouton "Supprimer" () : Annule un rendez-vous après confirmation.
+Bouton "WhatsApp" () : Ouvre une conversation WhatsApp pré-remplie avec un rappel de rendez-vous pour le patient.
+Bouton "RDV du Jour" () : Génère un PDF de la liste des rendez-vous pour la date actuelle, utile pour l'impression.
+Chargement de la page...
+Rôle : Ce module est généralement utilisé par les Assistantes et les Médecins.
+
+Page de Prise de RDV en Ligne (Côté Patient)
+Cette page est accessible aux patients via un lien ou un QR code fourni par l'administrateur. Elle permet aux patients de soumettre des demandes de rendez-vous en ligne, sans avoir besoin de se connecter.
+
+Formulaire Guidé : Le patient remplit ses informations personnelles (identité, contact) puis choisit une date, un médecin et un créneau horaire disponible.
+Étape 1 : Vos informations () : Saisie de l'ID Patient (), Nom, Prénom, Sexe, Date de naissance, Téléphone et Antécédents médicaux. Le bouton "Suivant" () vous mène à l'étape suivante.
+Étape 2 : Choisissez votre RDV () : Sélection de la Date souhaitée () et du Médecin (). La liste des Heures souhaitées () est mise à jour dynamiquement pour n'afficher que les créneaux disponibles pour le médecin et la date choisis.
+Vérification des Créneaux : Le système affiche uniquement les créneaux disponibles et bloque les dates où le cabinet est indisponible (configuré par l'administrateur dans La page Administration).
+Confirmation : Après soumission via le bouton "Confirmer le RDV" () , le rendez-vous est marqué "En attente d'approbation" dans le système de la clinique. Une confirmation sera envoyée au patient après approbation par le cabinet.
+Chargement de la page...
+Note : Ce module est public et ne nécessite aucune connexion pour le patient. Il est le point d'entrée pour la prise de RDV en ligne.
+
+5. Module Consultation
+La page Consultation, accessible via l'icône  sur le tableau de bord, est l'outil principal pour les médecins. Il permet d'enregistrer toutes les informations pertinentes d'une consultation médicale.
+
+Page Principale : Enregistrement de Consultation
+Cette page est un formulaire complet organisé en onglets pour faciliter la saisie des données cliniques et administratives d'une consultation.
+
+Onglet "Infos Base" () : Saisie des informations du médecin consultant et du patient. Le champ "ID Patient" () est crucial : en le remplissant, les informations du patient (Nom, Prénom, Âge, etc.) sont automatiquement pré-remplies si le patient existe dans la base de données.
+Onglet "Diagnostique" () : Pour enregistrer les Signes Cliniques (), les paramètres vitaux (Tension , Température , Fréquence Cardiaque , Fréquence Respiratoire ) et le Diagnostic () du médecin, ainsi que des commentaires généraux ().
+Onglet "Médicaments" () : Permet d'ajouter les médicaments prescrits à partir d'une liste personnalisable (gérée par l'admin), ou d'en saisir de nouveaux. Utilisez le bouton "Ajouter" () et "Supprimer Sélection" ().
+Onglet "Biologie" () : Pour les analyses biologiques demandées, avec la même logique de liste personnalisable d'ajout/suppression.
+Onglet "Radiologies" () : Pour les radiologies prescrites, avec des options d'ajout/suppression similaires.
+Onglet "Certificat" () : Pour générer divers types de certificats médicaux (maladie, bonne santé, sport, etc.). Choisissez une Catégorie () pour pré-remplir le Contenu (), puis modifiez-le si nécessaire. Cochez "Inclure le certificat" () pour l'intégrer au PDF final.
+Onglet "Suivi" () : Affiche l'historique de toutes les consultations précédentes pour le patient sélectionné, permettant un suivi longitudinal de son état de santé. Les boutons "Rafraîchir" () et "Historique Patient" () (pour générer un PDF complet des consultations du patient) sont disponibles.
+En bas de la page, des boutons d'action vous permettent de :
+
+Enregistrer () : Sauvegarder toutes les informations de la consultation dans le système.
+Réinitialiser () : Efface tous les champs du formulaire de la consultation actuelle.
+Prescriptions PDF () : Générer et télécharger un PDF incluant l'ordonnance, les demandes d'analyses/radiologies et le certificat (si inclus).
+Chargement de la page...
+Rôle : Ce module est principalement utilisé par les Médecins.
+
+6. Module Patients
+Ce module, accessible via l'icône  sur le tableau de bord, centralise la gestion de votre base de données patients.
+
+Page Principale : Liste et Gestion des Patients
+La page est divisée en deux onglets principaux pour une gestion claire :
+
+Onglet "Ajouter Patient" () : Un formulaire dédié pour enregistrer de nouveaux patients avec leurs informations démographiques et médicales :
+ID Patient () : Un identifiant unique pour le patient (ex: numéro de CIN).
+Nom () & Prénom () : Informations d'identité du patient.
+Date de Naissance () : Importante pour le calcul automatique de l'âge.
+Sexe () : Masculin, Féminin, Autre.
+Téléphone () : Numéro de contact du patient.
+Antécédents Médicaux () : Informations importantes sur l'historique médical du patient.
+Bouton "Ajouter Patient" () : Pour enregistrer le nouveau patient.
+Onglet "Liste des Patients" () : Un tableau interactif affichant tous les patients enregistrés. Pour chaque patient listé, vous pouvez effectuer les actions suivantes :
+Bouton "Modifier" () : Pour ouvrir un formulaire de modification et mettre à jour les informations d'un patient existant.
+Bouton "Supprimer" () : Pour retirer définitivement un patient de la base de données.
+Bouton "Générer Badge" () : Crée un badge d'identification au format PDF pour le patient, incluant ses informations clés et un QR code.
+Bouton "Envoyer message WhatsApp" () : Ouvre une conversation WhatsApp pré-remplie pour contacter le patient rapidement.
+Bouton "Nouvelle Consultation" () : Prépare et pré-remplit un nouveau formulaire de consultation avec les données de ce patient, vous faisant gagner du temps.
+Un bouton Générer Tous les Badges () est également disponible pour créer un seul fichier PDF contenant les badges de tous vos patients.
+Chargement de la page...
+Rôles : Ce module est essentiel pour l'Admin, l'Assistante et le Médecin.
+
+7. Module Facturation
+La page Facturation, accessible via l'icône  sur le tableau de bord, gère l'aspect financier des services fournis par votre clinique.
+
+Page Principale : Gestion Financière
+La page est divisée en plusieurs onglets pour une gestion financière complète :
+
+Onglet "Facturation" () : Pour Générer une facture.
+Sélectionnez un ID Patient () pour pré-remplir ses informations.
+Ajoutez des Services () à la facture, soit en les sélectionnant dans une liste, soit en saisissant de nouveaux services avec leur prix.
+Le système calcule automatiquement le Sous-total HT, la TVA et le Total TTC.
+Cliquez sur "Générer la facture" () pour créer le document PDF et l'enregistrer.
+Onglet "Enregistrer un Paiement" () : Pour enregistrer les paiements reçus.
+Saisissez la Date du Paiement (), le Montant () et le Mode de Paiement ().
+Vous pouvez lier le paiement à un Numéro de Facture () existant et marquer la facture comme "Payée".
+Possibilité de Joindre une preuve de paiement () (image ou PDF).
+Cliquez sur "Enregistrer Paiement" () ou "Générer Reçu" () pour créer un reçu PDF.
+Onglet "Rapport global" () : Offre un aperçu financier avec des indicateurs clés (total des factures, chiffre d'affaires total TTC, total HT, total TVA, moyenne par facture). Vous pouvez filtrer ce rapport par période (date de début/fin).
+Onglet "Paiements antérieurs" (Historique) () : Une liste complète de toutes les factures émises et des paiements enregistrés. Pour chaque entrée, vous pouvez :
+"Télécharger Facture" () : Télécharger le PDF de la facture.
+"Générer Reçu" () : Générer un reçu pour cette facture (si elle est marquée comme payée).
+"Télécharger Preuve" () : Télécharger la preuve de paiement jointe.
+"Supprimer" () : Supprimer une facture et ses paiements associés.
+Chargement de la page...
+Rôles : Ce module est essentiel pour l'Admin, le Comptable et l'Assistante.
+
+8. Module Biologie
+Accessible via l'icône  sur le tableau de bord, ce module est dédié à la gestion des analyses biologiques des patients.
+
+Page Principale : Gestion des Analyses Biologiques
+Cette page vous permet de saisir de nouvelles analyses et de consulter l'historique complet, organisée en deux onglets :
+
+Onglet "Nouvelle Analyse" () : Pour Saisir une nouvelle analyse.
+Saisissez l'ID Patient () pour auto-remplir ses informations et afficher les analyses déjà prescrites.
+Entrez le Nom de l'analyse () et la Conclusion du biologiste ().
+Le bouton "Ajouter une autre analyse" () vous permet d'ajouter plusieurs analyses pour le même patient en une seule fois.
+Vous pouvez "Importer le résultat PDF" () du laboratoire.
+Cliquez sur "Enregistrer l'analyse(s)" () pour sauvegarder. Les conclusions sont automatiquement ajoutées au commentaire du médecin dans le dossier de consultation du patient.
+Onglet "Historique Analyses" () : Affiche un tableau listant toutes les analyses saisies.
+Pour chaque analyse, vous pouvez "Télécharger" () le fichier PDF du résultat si disponible.
+Un bouton "Exporter l'historique" () permet de télécharger toutes les analyses dans un fichier Excel unique.
+Chargement de la page...
+Rôles : Ce module est généralement utilisé par le Biologiste, le Médecin et l'Admin.
+
+9. Module Radiologie
+La page Radiologie, accessible via l'icône  sur le tableau de bord, est spécifiquement conçu pour la gestion des analyses radiologiques.
+
+Page Principale : Gestion des Analyses Radiologiques
+Similaire au module Biologie, cette page offre des fonctionnalités pour l'enregistrement et le suivi des radiologies, organisée en deux onglets :
+
+Onglet "Nouvelle Radiologie" () : Pour Saisir une nouvelle radiologie.
+Saisissez l'ID Patient () pour auto-remplir ses informations et afficher les radiologies déjà prescrites.
+Entrez le Nom de la radiologie () et la Conclusion du radiologue ().
+Le bouton "Ajouter une autre radiologie" () vous permet d'ajouter plusieurs radiologies pour le même patient en une seule fois.
+Vous pouvez "Importer le résultat PDF" () du laboratoire.
+Cliquez sur "Enregistrer la radiologie(s)" () pour sauvegarder. Les conclusions sont également intégrées au commentaire du médecin dans le dossier du patient.
+Onglet "Historique Radiologies" () : Affiche un tableau listant toutes les radiologies saisies.
+Pour chaque radiologie, vous pouvez "Télécharger" () le fichier PDF du résultat si disponible.
+Un bouton "Exporter l'historique" () permet de télécharger toutes les radiologies dans un fichier Excel unique.
+Chargement de la page...
+Rôles : Ce module est principalement utilisé par le Radiologue, le Médecin et l'Admin.
+
+10. Module Pharmacie & Stock
+Accessible via l'icône  sur le tableau de bord, ce module est essentiel pour le suivi de l'inventaire des produits pharmaceutiques et parapharmaceutiques de votre clinique.
+
+Page Principale : Gestion du Stock
+Cette page est divisée en plusieurs onglets pour une gestion complète du stock :
+
+Onglet "Aperçu" () : Un tableau de bord rapide affichant :
+Le Total Produits () : Nombre total d'articles dans votre inventaire.
+Les Alertes Stock Bas () : Nombre de produits dont la quantité est inférieure au seuil d'alerte.
+Les Produits Expirés () : Liste des articles dont la date de péremption est dépassée.
+Les Derniers Mouvements () : Un aperçu des 10 dernières entrées ou sorties de stock.
+Onglet "Inventaire" () : La liste complète de tous les produits en stock, avec leurs détails (code, nom, quantité, prix d'achat/vente, fournisseur, date d'expiration, seuil d'alerte, date d'enregistrement) et leur statut (En Stock, Stock Bas, Rupture).
+Bouton "Supprimer" () : Pour retirer un produit de l'inventaire.
+Boutons "Exporter PDF" () et "Exporter Excel" () pour l'inventaire.
+Onglet "Mouvements" () : Pour enregistrer les entrées (achats) et sorties (ventes/consommation) de produits.
+Sélectionnez le Produit (), le Type de Mouvement () et la Quantité ().
+Indiquez les Détails du Responsable () : Nom, Prénom et Téléphone de la personne effectuant le mouvement.
+Le bouton "Enregistrer le mouvement" () valide l'opération.
+Un tableau "Historique des Mouvements" suit toutes les entrées et sorties.
+Boutons "Exporter PDF" () et "Exporter Excel" () pour l'historique des mouvements.
+Onglet "Ajouter Produit" () : Un formulaire pour ajouter de nouveaux produits à votre inventaire ou modifier les produits existants.
+Saisissez le Code Produit (), Nom du Produit (), Type () & Usage (), Quantité ().
+Indiquez les Prix d'Achat () & de Vente (), le Fournisseur (), la Date d'Expiration () et le Seuil d'Alerte ().
+Les achats sont automatiquement enregistrés comme des dépenses dans la comptabilité.
+Chargement de la page...
+Rôles : Ce module est principalement utilisé par le personnel de la Pharmacie/Magasin et l'Admin.
+
+11. Module Comptabilité
+La page Comptabilité, accessible via l'icône  sur le tableau de bord, vous permet de gérer et de suivre toutes les opérations financières de votre clinique.
+
+Page Principale : Tableau de Bord Financier
+Cette page est organisée en plusieurs onglets pour un suivi financier détaillé :
+
+Onglet "Tableau de Bord" () : Un aperçu financier avec les indicateurs clés (recettes totales, dépenses totales, bénéfice net) et des graphiques de tendance mensuelle (recettes, dépenses, bénéfice net), répartition des recettes par type d'acte, et répartition des dépenses par catégorie. Un filtre par mois est disponible.
+Onglet "Recettes" () : Pour enregistrer toutes les entrées d'argent, en les liant optionnellement à un patient ou à une facture.
+Onglet "Dépenses" () : Pour enregistrer toutes les sorties d'argent, avec une catégorisation et la possibilité de joindre des justificatifs (factures, reçus).
+Onglet "Salaires & Paie" () : Pour enregistrer les salaires des employés, calculer les totaux (net, charges, brut) et générer des fiches de paie au format PDF. Des fonctions d'import/export Excel sont également disponibles.
+Onglet "Tiers Payants / Assurances" () : Pour suivre les montants attendus et reçus des organismes d'assurance ou mutuelles, avec gestion du statut de règlement.
+Onglet "Documents Fiscaux" () : Une section pour archiver et accéder facilement à tous vos documents fiscaux importants (déclarations, bilans, etc.) au format PDF.
+Onglet "Rapports" () : Pour générer des rapports financiers personnalisés (revenus/dépenses) sur une période donnée et les exporter en Excel.
+Chargement de la page...
+Rôles : Ce module est principalement utilisé par le Comptable et l'Admin.
+
+12. Module Statistiques
+La page Statistiques, accessible via l'icône  sur le tableau de bord, offre une analyse approfondie des performances de votre clinique à travers des indicateurs clés et des visualisations graphiques.
+
+Page Principale : Tableau de Bord Statistique
+Cette page présente un aperçu dynamique de l'activité de votre clinique. Elle inclut :
+
+Filtres de Données : Vous pouvez filtrer les données affichées par une période spécifique (dates de début et de fin) et par médecin, pour des analyses ciblées. Vous pouvez également choisir quels graphiques vous souhaitez afficher.
+Indicateurs Clés de Performance (KPIs) : Des chiffres récapitulatifs pour les métriques les plus importantes, telles que le nombre total de factures, de patients uniques, de rendez-vous, la valeur du stock, le total des recettes, le total des dépenses et le bénéfice net.
+Graphiques Dynamiques : Une série de graphiques (à barres et circulaires) illustrant diverses facettes de votre activité :
+Consultations mensuelles
+Total des recettes mensuel
+Répartition des patients par sexe et par tranches d'âge
+Salaires mensuels
+Nombre de rendez-vous par médecin
+Dépenses par catégorie
+Recettes par type d'acte
+Top 10 des produits en stock
+Types de mouvements de stock
+Chaque graphique est accompagné d'une brève analyse textuelle pour vous aider à interpréter rapidement les tendances et les répartitions.
+
+Chargement de la page...
+Rôles : Ce module est principalement utilisé par l'Admin et le Médecin pour le suivi et l'analyse stratégique.
+
+13. Module Assistant IA (Synapse)
+Accessible via l'icône  sur le tableau de bord, Synapse est votre assistant médical intelligent. Il est conçu pour assister les professionnels de la santé en répondant à des questions complexes, en analysant des documents et en fournissant des informations factuelles basées sur les dernières données médicales.
+
+Important : L'assistant Synapse est programmé pour répondre uniquement aux questions relatives aux domaines de la médecine, santé, biologie, pharmacologie et radiologie. Toute question hors de ce cadre sera poliment déclinée.
+
+Page Principale : Interface de Chat Intelligente
+L'interface de l'assistant est conçue pour être intuitive et efficace, centrée autour d'une conversation fluide.
+
+Barre Latérale des Conversations () : Sur la gauche, vous trouverez l'historique de vos conversations. Vous pouvez démarrer une "Nouvelle Discussion" (), naviguer entre les anciennes conversations ou les supprimer ().
+Fenêtre de Chat Principale () : Affiche le dialogue entre vous (l'utilisateur) et Synapse (l'IA). Les réponses de l'IA sont formatées pour une lecture facile et peuvent être copiées () en un clic.
+Zone de Saisie () : En bas de la page, vous pouvez taper votre question, joindre des fichiers () comme des rapports PDF, des feuilles de calcul Excel ou des images, puis envoyer votre requête à l'assistant.
+Chargement de la page...
+Rôles : Ce module avancé est accessible aux rôles Admin et Médecin.
+
+ SASTOUKA DIGITAL © 2025 • sastoukadigital@gmail.com tel +212652084735
+
+Ouvrir l'assistant
+
+EasyMedicaLink est une application conçue pour simplifier la gestion quotidienne de votre clinique ou cabinet médical. Elle est organisée en plusieurs modules, chacun étant dédié à une fonction précise de votre activité, afin de centraliser toutes vos opérations en un seul endroit.
+
+
+L'accès aux fonctionnalités est adapté en fonction de votre rôle (Admin, Médecin, Assistante, etc.), garantissant ainsi que chaque utilisateur dispose d'une interface épurée et pertinente pour ses tâches.
+
+
+Avec EasyMedicaLink, vous pouvez gérer efficacement la prise de rendez-vous , maintenir une base de données complète de vos patients et enregistrer tous les détails d'une consultation, de l'émission d'ordonnances à la création de certificats. L'application intègre également des modules essentiels pour la facturation et l'enregistrement des paiements , la gestion des analyses de biologie et de radiologie , le suivi des stocks de votre pharmacie et même un module de comptabilité complet.
+
+
+
+
+
+Pour une vision d'ensemble, des tableaux de bord statistiques vous permettent d'analyser l'activité de votre clinique , et un assistant IA est même disponible pour aider les médecins à la décision. L'objectif est de vous offrir un outil complet pour optimiser votre temps et votre organisation. 

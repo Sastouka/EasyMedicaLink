@@ -1249,6 +1249,7 @@ guide_template = """
             };
         });
     </script>
+    {% include '_floating_assistant.html' %} 
 </body>
 </html>
 """

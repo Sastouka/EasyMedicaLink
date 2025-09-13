@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistant Flottant</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --assistant-bg: #2c2c34;
+            --primary-accent: #4a90e2;
+            --text-primary: #f0f0f0;
+            --text-secondary: #b0b0b0;
+            --font-family: 'Inter', system-ui, sans-serif;
+            --border-radius-lg: 16px;
+        }
+
+        /* Animations */
+        @keyframes float-idle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        @keyframes slide-in-up {
+            from { opacity: 0; transform: translateY(30px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes blink {
+            from, to { color: transparent; }
+            50% { color: var(--primary-accent); }
+        }
+
+        #assistant-toggle-button {
+            position: fixed; bottom: 25px; right: 25px;
+            width: 64px; height: 64px;
+            background-color: transparent;
+            border-radius: 50%; border: none; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.3); z-index: 1049;
+            animation: float-idle 5s ease-in-out infinite;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+        #assistant-toggle-button img {
+            width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+        }
+        #assistant-toggle-button:hover { transform: scale(1.1); animation-play-state: paused; }
+
+        #assistant-toggle-button.hidden {
+            opacity: 0; transform: scale(0.5); pointer-events: none;
+        }
+
+        #assistant-window {
+            position: fixed; bottom: 25px; right: 25px;
+            width: 340px;
+            background-color: var(--assistant-bg);
+            border-radius: var(--border-radius-lg);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex; flex-direction: column; z-index: 1050;
+            font-family: var(--font-family); animation: slide-in-up 0.4s ease-out;
+            max-height: 80vh;
+            transition: width 0.3s ease, height 0.3s ease, bottom 0.3s ease, right 0.3s ease, transform 0.3s ease;
+            overflow: hidden;
+        }
+
+        #assistant-header {
+            width: 100%; cursor: move; text-align: center;
+            padding: 10px 15px; color: var(--text-secondary);
+            font-size: 0.9rem; display: flex; justify-content: space-between;
+            align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
+        
+        #assistant-header .controls { display: flex; align-items: center; }
+        .header-btn {
+            background: none; border: none; color: var(--text-secondary);
+            font-size: 1.5rem; cursor: pointer; line-height: 1; padding: 0 5px;
+        }
+        .header-btn:hover { color: white; }
+        
+        #assistant-window.minimized { height: 44px; width: 200px; }
+        #assistant-window.minimized #assistant-response-text,
+        #assistant-window.minimized #assistant-main-content {
+            display: none;
+        }
+        
+        #assistant-response-text {
+            padding: 15px; font-size: 0.95rem; line-height: 1.6;
+            color: var(--text-primary); max-height: 250px; overflow-y: auto;
+            display: none; width: 100%;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            white-space: pre-wrap; /* Pour respecter les sauts de ligne et espaces */
+            word-wrap: break-word; /* Pour couper les mots longs */
+        }
+        .blinking-cursor { font-weight: bold; animation: blink 1s step-end infinite; }
+        
+        #assistant-main-content {
+            padding: 15px; display: flex; flex-direction: column;
+            align-items: center; width: 100%;
+        }
+        #assistant-avatar-wrapper {
+             margin-bottom: 10px;
+        }
+        #assistant-avatar {
+            width: 70px; height: 70px; border-radius: 50%; object-fit: cover;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+        }
+        #assistant-status {
+            font-size: 0.9rem; color: var(--text-secondary); font-weight: 500;
+            min-height: 1.5em; text-align: center; margin-bottom: 15px;
+        }
+        
+        #text-input-form {
+            display: flex; align-items: center;
+            width: 100%; gap: 8px;
+        }
+        #text-input-control {
+            flex-grow: 1; background-color: #3a3a42;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-primary); border-radius: 20px;
+            padding: 10px 15px; font-size: 0.9rem;
+            outline: none; transition: border-color 0.3s ease;
+        }
+        #text-input-control:focus { border-color: var(--primary-accent); }
+        #send-button-control {
+            flex-shrink: 0; width: 40px; height: 40px;
+            border-radius: 50%; border: none;
+            background: var(--primary-accent);
+            color: white; font-size: 1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: transform 0.3s ease, background-color 0.3s ease;
+        }
+        #send-button-control:hover { transform: scale(1.1); background-color: #357ABD; }
+        
+        /* Styles pour tablettes et smartphones */
+        @media (max-width: 768px) {
+            #assistant-window {
+                width: 95vw; max-height: 90vh; bottom: 10px;
+                right: 50%; transform: translateX(50%);
+            }
+            #assistant-window.minimized { width: 180px; }
+            #assistant-toggle-button {
+                width: 58px; height: 58px; bottom: 15px; right: 15px;
+            }
+            #assistant-avatar { width: 60px; height: 60px; }
+            #text-input-control { font-size: 0.85rem; }
+        }
+    </style>
+</head>
+<body>
+    <button id="assistant-toggle-button" title="Ouvrir l'Assistant Synapse">
+        <img src="{{ url_for('ia_assistant_synapse.static', filename='ia_avatar/avatar_calme.png') }}" alt="Ouvrir l'assistant">
+    </button>
+    
+    <div id="assistant-window" style="display: none;">
+        <div id="assistant-header" title="Déplacer la fenêtre">
+            <span>Synapse</span>
+            <div class="controls">
+                <button id="minimize-assistant-btn" class="header-btn" title="Réduire">－</button>
+                <button id="close-assistant-btn" class="header-btn" title="Fermer">×</button>
+            </div>
+        </div>
+        <div id="assistant-response-text"></div>
+        <div id="assistant-main-content">
+            <div id="assistant-avatar-wrapper">
+                <img src="{{ url_for('ia_assistant_synapse.static', filename='ia_avatar/avatar_calme.png') }}" id="assistant-avatar" alt="Avatar IA">
+            </div>
+            <div id="assistant-status">Prêt</div>
+            <form id="text-input-form">
+                <input type="text" id="text-input-control" placeholder="Posez votre question ici..." autocomplete="off">
+                <button type="submit" id="send-button-control" title="Envoyer">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </form>
+            </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- Références aux éléments du DOM ---
+        const toggleButton = document.getElementById('assistant-toggle-button');
+        const assistantWindow = document.getElementById('assistant-window');
+        const closeButton = document.getElementById('close-assistant-btn');
+        const minimizeButton = document.getElementById('minimize-assistant-btn');
+        const header = document.getElementById('assistant-header');
+        const statusText = document.getElementById('assistant-status');
+        const responseTextDiv = document.getElementById('assistant-response-text');
+        const textInputForm = document.getElementById('text-input-form');
+        const textInputControl = document.getElementById('text-input-control');
+
+        // --- Variables d'état ---
+        let conversationHistory = [];
+        let inactivityTimer;
+
+        // --- Gestion de l'inactivité ---
+        function resetInactivityTimer() {
+            toggleButton.classList.remove('hidden');
+            clearTimeout(inactivityTimer);
+            inactivityTimer = setTimeout(() => {
+                if (window.getComputedStyle(assistantWindow).display === 'none') {
+                    toggleButton.classList.add('hidden');
+                }
+            }, 10000);
+        }
+        
+        const activityEvents = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
+        activityEvents.forEach(event => {
+            parent.window.addEventListener(event, resetInactivityTimer, true);
+        });
+
+        // --- Écouteurs d'événements de l'interface ---
+        toggleButton.addEventListener('click', () => {
+            clearTimeout(inactivityTimer);
+            toggleButton.style.display = 'none';
+            assistantWindow.style.display = 'flex';
+        });
+
+        closeButton.addEventListener('click', () => {
+            setState('idle');
+            assistantWindow.classList.remove('minimized');
+            assistantWindow.style.display = 'none';
+            toggleButton.style.display = 'flex';
+            resetInactivityTimer();
+        });
+
+        minimizeButton.addEventListener('click', () => {
+            assistantWindow.classList.toggle('minimized');
+            const isMinimized = assistantWindow.classList.contains('minimized');
+            minimizeButton.title = isMinimized ? "Agrandir" : "Réduire";
+            minimizeButton.innerHTML = isMinimized ? '□' : '－';
+        });
+
+        textInputForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const userText = textInputControl.value.trim();
+            if (userText) {
+                handleUserQuery(userText);
+                textInputControl.value = '';
+            }
+        });
+
+        // --- Gestion des états de l'assistant ---
+        function setState(state, message = "") {
+            switch (state) {
+                case 'idle':
+                    // Réinitialise complètement la fenêtre (utilisé à la fermeture)
+                    statusText.textContent = "Prêt à vous assister";
+                    responseTextDiv.style.display = 'none';
+                    responseTextDiv.innerHTML = '';
+                    break;
+                case 'processing':
+                    // Nettoie l'ancienne réponse et affiche "réfléchit..."
+                    statusText.textContent = "Synapse réfléchit...";
+                    responseTextDiv.style.display = 'block';
+                    responseTextDiv.innerHTML = '<span class="blinking-cursor">|</span>';
+                    break;
+                case 'error':
+                    statusText.textContent = message || "Désolé, une erreur est survenue.";
+                    setTimeout(() => setState('idle'), 3000);
+                    break;
+            }
+        }
+
+        // --- Logique principale de communication avec le backend ---
+        async function handleUserQuery(question) {
+            if (!question) return;
+
+            // Appelle 'processing' qui va nettoyer la réponse précédente.
+            setState('processing');
+            conversationHistory.push({ role: 'user', parts: [question] });
+
+            try {
+                const response = await fetch("{{ url_for('ia_assistant_synapse.chat_texte') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ history: conversationHistory })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || "Erreur inconnue du serveur");
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullResponse = "";
+                
+                // On s'assure que la zone est vide avant de commencer le streaming
+                responseTextDiv.innerHTML = ""; 
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullResponse += chunk;
+                    
+                    // Affichage du texte en streaming
+                    responseTextDiv.innerHTML = fullResponse.replace(/\n/g, '<br>') + '<span class="blinking-cursor">|</span>';
+                    responseTextDiv.scrollTop = responseTextDiv.scrollHeight;
+                }
+                
+                // Finalisation de l'affichage (sans le curseur)
+                responseTextDiv.innerHTML = fullResponse.replace(/\n/g, '<br>');
+                conversationHistory.push({ role: 'model', parts: [fullResponse] });
+                
+                // Met à jour le statut sans cacher la réponse.
+                statusText.textContent = "Prêt à vous assister"; 
+
+            } catch (error) {
+                console.error("Erreur:", error);
+                setState('error', error.message);
+            }
+        }
+
+        // --- Logique de glisser-déposer de la fenêtre ---
+        let isDragging = false, offsetX, offsetY;
+        header.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'BUTTON' || window.innerWidth <= 768) return;
+            isDragging = true;
+            offsetX = e.clientX - assistantWindow.offsetLeft;
+            offsetY = e.clientY - assistantWindow.offsetTop;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                let newLeft = e.clientX - offsetX, newTop = e.clientY - offsetY;
+                const rect = assistantWindow.getBoundingClientRect();
+                if (newLeft < 0) newLeft = 0;
+                if (newTop < 0) newTop = 0;
+                if (newLeft + rect.width > window.innerWidth) newLeft = window.innerWidth - rect.width;
+                if (newTop + rect.height > window.innerHeight) newTop = window.innerHeight - rect.height;
+                assistantWindow.style.left = `${newLeft}px`;
+                assistantWindow.style.top = `${newTop}px`;
+                assistantWindow.style.bottom = 'auto';
+                assistantWindow.style.right = 'auto';
+            }
+        });
+
+        document.addEventListener('mouseup', () => { isDragging = false; });
+
+        // Démarrage initial du timer d'inactivité
+        resetInactivityTimer();
+    });
+    </script>
+</body>
+</html>

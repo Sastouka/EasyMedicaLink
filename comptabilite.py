@@ -383,19 +383,31 @@ def home_comptabilite():
     host_address = f"http://{utils.LOCAL_IP}:3000"
     current_date = datetime.now().strftime("%Y-%m-%d")
 
-    # Récupérer le mois sélectionné depuis la requête (si présent)
-    selected_month_str = request.args.get('selected_month')
-    selected_year = None
-    selected_month_num = None
+    # --- LOGIQUE DE FILTRE AVEC PÉRIODE PAR DÉFAUT ---
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+    start_dt, end_dt = None, None
 
-    if selected_month_str:
+    # Si aucune date n'est fournie, appliquer le filtre par défaut (début de l'année à aujourd'hui)
+    if not start_date_str and not end_date_str:
+        today = date.today()
+        start_dt = datetime(today.year, 1, 1)
+        end_dt = datetime.combine(today, datetime.max.time()) # Fin de la journée actuelle
+        
+        # Mettre à jour les chaînes de caractères pour les afficher dans les champs du formulaire
+        start_date_str = start_dt.strftime('%Y-%m-%d')
+        end_date_str = end_dt.strftime('%Y-%m-%d')
+    else:
+        # Sinon, utiliser les dates fournies par l'utilisateur
         try:
-            selected_date_obj = datetime.strptime(selected_month_str, '%Y-%m')
-            selected_year = selected_date_obj.year
-            selected_month_num = selected_date_obj.month
+            if start_date_str:
+                start_dt = datetime.strptime(start_date_str, '%Y-%m-%d')
+            if end_date_str:
+                # Inclure toute la journée de la date de fin
+                end_dt = datetime.combine(datetime.strptime(end_date_str, '%Y-%m-%d').date(), datetime.max.time())
         except ValueError:
-            flash("Format de mois invalide. Utilisez AAAA-MM.", "danger")
-            selected_month_str = None
+            flash("Format de date invalide. Utilisez AAAA-MM-JJ.", "danger")
+            start_dt, end_dt = None, None
 
     # --- Initialisation des données pour les onglets ---
     recettes_df = load_recettes()
@@ -404,7 +416,7 @@ def home_comptabilite():
     tiers_payants_df = load_tiers_payants()
     documents_fiscaux_df = load_documents_fiscaux()
 
-    # Ensure parsed date columns exist immediately after loading original DFs
+    # Ajout des colonnes de date parsées
     if not recettes_df.empty and 'Date' in recettes_df.columns:
         recettes_df['Date_Parsed'] = pd.to_datetime(recettes_df['Date'], errors='coerce')
     else:
@@ -420,74 +432,31 @@ def home_comptabilite():
     else:
         salaires_df['Mois_Annee_Parsed'] = pd.Series(dtype='datetime64[ns]')
 
-    # Add Date_Parsed for tiers_payants_df
     if not tiers_payants_df.empty and 'Date_Reglement' in tiers_payants_df.columns:
         tiers_payants_df['Date_Parsed'] = pd.to_datetime(tiers_payants_df['Date_Reglement'], errors='coerce')
     else:
         tiers_payants_df['Date_Parsed'] = pd.Series(dtype='datetime64[ns]')
 
-
-    # Apply month filter to DataFrames for KPIs and pie charts
+    # Appliquer le filtre de période aux DataFrames
     filtered_recettes_df = recettes_df.copy()
     filtered_depenses_df = depenses_df.copy()
     filtered_salaires_df = salaires_df.copy()
-    filtered_tiers_payants_df = tiers_payants_df.copy() # Add this line
+    filtered_tiers_payants_df = tiers_payants_df.copy()
 
-    # Also apply filter to the data for the monthly trend chart if a month is selected
-    monthly_trend_recettes_df = recettes_df.copy()
-    monthly_trend_depenses_df = depenses_df.copy()
-    monthly_trend_salaires_df = salaires_df.copy()
-    monthly_trend_tiers_payants_df = tiers_payants_df.copy() # Add this line
-
-
-    if selected_year and selected_month_num:
-        # Filter for KPIs and pie charts
-        filtered_recettes_df = filtered_recettes_df[
-            (filtered_recettes_df['Date_Parsed'].dt.year == selected_year) &
-            (filtered_recettes_df['Date_Parsed'].dt.month == selected_month_num)
-        ]
-
-        filtered_depenses_df = filtered_depenses_df[
-            (filtered_depenses_df['Date_Parsed'].dt.year == selected_year) &
-            (filtered_depenses_df['Date_Parsed'].dt.month == selected_month_num)
-        ]
-
-        filtered_salaires_df = filtered_salaires_df[
-            (filtered_salaires_df['Mois_Annee_Parsed'].dt.year == selected_year) &
-            (filtered_salaires_df['Mois_Annee_Parsed'].dt.month == selected_month_num)
-        ]
-        
-        # Filter tiers_payants for KPIs and pie charts by Date_Reglement
-        filtered_tiers_payants_df = filtered_tiers_payants_df[
-            (filtered_tiers_payants_df['Date_Parsed'].dt.year == selected_year) &
-            (filtered_tiers_payants_df['Date_Parsed'].dt.month == selected_month_num)
-        ]
-
-        # Apply filter to monthly trend dataframes too if a specific month is selected
-        monthly_trend_recettes_df = monthly_trend_recettes_df[
-            (monthly_trend_recettes_df['Date_Parsed'].dt.year == selected_year) &
-            (monthly_trend_recettes_df['Date_Parsed'].dt.month == selected_month_num)
-        ]
-
-        monthly_trend_depenses_df = monthly_trend_depenses_df[
-            (monthly_trend_depenses_df['Date_Parsed'].dt.year == selected_year) &
-            (monthly_trend_depenses_df['Date_Parsed'].dt.month == selected_month_num)
-        ]
-        
-        monthly_trend_salaires_df = monthly_trend_salaires_df[
-            (monthly_trend_salaires_df['Mois_Annee_Parsed'].dt.year == selected_year) &
-            (monthly_trend_salaires_df['Mois_Annee_Parsed'].dt.month == selected_month_num)
-        ]
-
-        # Filter monthly_trend_tiers_payants_df by Date_Reglement
-        monthly_trend_tiers_payants_df = monthly_trend_tiers_payants_df[
-            (monthly_trend_tiers_payants_df['Date_Parsed'].dt.year == selected_year) &
-            (monthly_trend_tiers_payants_df['Date_Parsed'].dt.month == selected_month_num)
-        ]
+    if start_dt:
+        filtered_recettes_df = filtered_recettes_df[filtered_recettes_df['Date_Parsed'] >= start_dt]
+        filtered_depenses_df = filtered_depenses_df[filtered_depenses_df['Date_Parsed'] >= start_dt]
+        filtered_salaires_df = filtered_salaires_df[filtered_salaires_df['Mois_Annee_Parsed'] >= start_dt]
+        filtered_tiers_payants_df = filtered_tiers_payants_df[filtered_tiers_payants_df['Date_Parsed'] >= start_dt]
+    
+    if end_dt:
+        filtered_recettes_df = filtered_recettes_df[filtered_recettes_df['Date_Parsed'] <= end_dt]
+        filtered_depenses_df = filtered_depenses_df[filtered_depenses_df['Date_Parsed'] <= end_dt]
+        filtered_salaires_df = filtered_salaires_df[filtered_salaires_df['Mois_Annee_Parsed'] <= end_dt]
+        filtered_tiers_payants_df = filtered_tiers_payants_df[filtered_tiers_payants_df['Date_Parsed'] <= end_dt]
 
     # --- Calcul des indicateurs pour le Tableau de Bord (utilisant les DFs filtrés) ---
     total_revenues_from_recettes = float(filtered_recettes_df['Montant'].sum()) if not filtered_recettes_df.empty else 0.0
-    # Include only received amounts from tiers payants with 'Réglé' or 'Partiellement réglé' status
     total_revenues_from_tiers_payants = float(filtered_tiers_payants_df[
         filtered_tiers_payants_df['Statut'].isin(['Réglé', 'Partiellement réglé'])
     ]['Montant_Recu'].sum()) if not filtered_tiers_payants_df.empty else 0.0
@@ -497,179 +466,94 @@ def home_comptabilite():
     total_expenses_value = float(filtered_depenses_df['Montant'].sum()) if not filtered_depenses_df.empty else 0.0
     total_salaries_value = float(filtered_salaires_df['Total_Brut'].sum()) if not filtered_salaires_df.empty else 0.0
     
-    # Calculate combined expenses for the dashboard display
     combined_total_expenses = total_expenses_value + total_salaries_value
-    
-    net_profit = total_revenues - combined_total_expenses # Use combined_total_expenses here
+    net_profit = total_revenues - combined_total_expenses
 
-    # Graphique 1: Tendances Mensuelles (Recettes, Dépenses, Bénéfice Net)
-    monthly_data = {
-        'labels': [],
-        'revenues': [],
-        'expenses': [],
-        'profit': []
-    }
-    
-    all_dates_in_trend_dfs = pd.Series(dtype='datetime64[ns]')
-    if not monthly_trend_recettes_df.empty and not monthly_trend_recettes_df['Date_Parsed'].isna().all():
-        all_dates_in_trend_dfs = pd.concat([all_dates_in_trend_dfs, monthly_trend_recettes_df['Date_Parsed'].dropna()])
-    if not monthly_trend_depenses_df.empty and not monthly_trend_depenses_df['Date_Parsed'].isna().all():
-        all_dates_in_trend_dfs = pd.concat([all_dates_in_trend_dfs, monthly_trend_depenses_df['Date_Parsed'].dropna()])
-    if not monthly_trend_salaires_df.empty and not monthly_trend_salaires_df['Mois_Annee_Parsed'].isna().all():
-        all_dates_in_trend_dfs = pd.concat([all_dates_in_trend_dfs, monthly_trend_salaires_df['Mois_Annee_Parsed'].dropna()])
-    if not monthly_trend_tiers_payants_df.empty and not monthly_trend_tiers_payants_df['Date_Parsed'].isna().all():
-        # Only include received amounts for monthly trend tiers payants
-        all_dates_in_trend_dfs = pd.concat([all_dates_in_trend_dfs, monthly_trend_tiers_payants_df['Date_Parsed'].dropna()])
+    # --- GRAPHIQUES ---
+    # Pour les graphiques, nous utilisons les données déjà filtrées par la période sélectionnée
+    monthly_trend_recettes_df = filtered_recettes_df.copy()
+    monthly_trend_depenses_df = filtered_depenses_df.copy()
+    monthly_trend_salaires_df = filtered_salaires_df.copy()
+    monthly_trend_tiers_payants_df = filtered_tiers_payants_df.copy()
 
-    all_dates = all_dates_in_trend_dfs.tolist()
+    # Graphique 1: Tendances Mensuelles
+    monthly_data = {'labels': [], 'revenues': [], 'expenses': [], 'profit': []}
+    all_dates_in_trend_dfs = pd.concat([
+        monthly_trend_recettes_df['Date_Parsed'].dropna(),
+        monthly_trend_depenses_df['Date_Parsed'].dropna(),
+        monthly_trend_salaires_df['Mois_Annee_Parsed'].dropna(),
+        monthly_trend_tiers_payants_df['Date_Parsed'].dropna()
+    ])
 
-    if all_dates:
-        min_date_val = min(all_dates)
-        max_date_val = max(all_dates)
+    if not all_dates_in_trend_dfs.empty:
+        min_date_val = min(all_dates_in_trend_dfs)
+        max_date_val = max(all_dates_in_trend_dfs)
         
-        if selected_year and selected_month_num:
-            current = datetime(selected_year, selected_month_num, 1)
-            end_date_for_range = current
-        else:
-            current = datetime(min_date_val.year, min_date_val.month, 1)
-            end_date_for_range = datetime.now().replace(day=1)
-            if max_date_val and max_date_val.replace(day=1) > end_date_for_range:
-                end_date_for_range = max_date_val.replace(day=1)
-
+        current = datetime(min_date_val.year, min_date_val.month, 1)
+        end_date_for_range = max_date_val
 
         while current <= end_date_for_range:
             month_str = current.strftime('%Y-%m')
             monthly_data['labels'].append(month_str)
             
-            m_rev_series = monthly_trend_recettes_df[
-                (monthly_trend_recettes_df['Date_Parsed'].dt.year == current.year) &
-                (monthly_trend_recettes_df['Date_Parsed'].dt.month == current.month)
-            ]['Montant']
-            m_rev = m_rev_series.sum() if not m_rev_series.empty else 0
-
-            m_tp_rev_series = monthly_trend_tiers_payants_df[
-                (monthly_trend_tiers_payants_df['Date_Parsed'].dt.year == current.year) &
-                (monthly_trend_tiers_payants_df['Date_Parsed'].dt.month == current.month) &
-                (monthly_trend_tiers_payants_df['Statut'].isin(['Réglé', 'Partiellement réglé']))
-            ]['Montant_Recu']
-            m_tp_rev = m_tp_rev_series.sum() if not m_tp_rev_series.empty else 0
-
+            m_rev = monthly_trend_recettes_df[(monthly_trend_recettes_df['Date_Parsed'].dt.year == current.year) & (monthly_trend_recettes_df['Date_Parsed'].dt.month == current.month)]['Montant'].sum()
+            m_tp_rev = monthly_trend_tiers_payants_df[(monthly_trend_tiers_payants_df['Date_Parsed'].dt.year == current.year) & (monthly_trend_tiers_payants_df['Date_Parsed'].dt.month == current.month) & (monthly_trend_tiers_payants_df['Statut'].isin(['Réglé', 'Partiellement réglé']))]['Montant_Recu'].sum()
             total_m_rev = m_rev + m_tp_rev
 
-            m_exp_series = monthly_trend_depenses_df[
-                (monthly_trend_depenses_df['Date_Parsed'].dt.year == current.year) &
-                (monthly_trend_depenses_df['Date_Parsed'].dt.month == current.month)
-            ]['Montant']
-            m_exp = m_exp_series.sum() if not m_exp_series.empty else 0
+            m_exp = monthly_trend_depenses_df[(monthly_trend_depenses_df['Date_Parsed'].dt.year == current.year) & (monthly_trend_depenses_df['Date_Parsed'].dt.month == current.month)]['Montant'].sum()
+            m_sal = monthly_trend_salaires_df[(monthly_trend_salaires_df['Mois_Annee_Parsed'].dt.year == current.year) & (monthly_trend_salaires_df['Mois_Annee_Parsed'].dt.month == current.month)]['Total_Brut'].sum()
 
-
-            m_sal_series = monthly_trend_salaires_df[
-                (monthly_trend_salaires_df['Mois_Annee_Parsed'].dt.year == current.year) &
-                (monthly_trend_salaires_df['Mois_Annee_Parsed'].dt.month == current.month)
-            ]['Total_Brut']
-            m_sal = m_sal_series.sum() if not m_sal_series.empty else 0
-
-
-            monthly_data['revenues'].append(float(total_m_rev)) # Updated to include Tiers Payants
+            monthly_data['revenues'].append(float(total_m_rev))
             monthly_data['expenses'].append(float(m_exp + m_sal))
-            monthly_data['profit'].append(float(total_m_rev - (m_exp + m_sal))) # Updated to include Tiers Payants
+            monthly_data['profit'].append(float(total_m_rev - (m_exp + m_sal)))
             
             if current.month == 12:
                 current = datetime(current.year + 1, 1, 1)
             else:
                 current = datetime(current.year, current.month + 1, 1)
-
     else:
-        if selected_month_str:
-            monthly_data['labels'].append(selected_month_str)
+        today = datetime.now()
+        for i in range(5, -1, -1):
+            month = today - timedelta(days=30 * i)
+            monthly_data['labels'].append(month.strftime('%Y-%m'))
             monthly_data['revenues'].append(0)
             monthly_data['expenses'].append(0)
             monthly_data['profit'].append(0)
-        else:
-            today = datetime.now()
-            for i in range(5, -1, -1):
-                month = today - timedelta(days=30 * i)
-                month_str = month.strftime('%Y-%m')
-                monthly_data['labels'].append(month_str)
-                monthly_data['revenues'].append(0)
-                monthly_data['expenses'].append(0)
-                monthly_data['profit'].append(0)
 
-
-    # Graphique 2: Répartition des Recettes par Type d'Acte (utilisant les DFs filtrés)
+    # Graphique 2: Répartition des Recettes
     revenue_by_type_data = {'labels': [], 'data': [], 'colors': []}
-    # Create a combined DataFrame for revenues including received tiers payants
-    # This assumes 'Type_Acte' can be inferred or defined for Tiers Payants.
-    # For simplicity, we'll treat them as a separate 'Tiers Payant' type if no specific act type is available.
-    combined_revenues_df = filtered_recettes_df[['Type_Acte', 'Montant']].copy()
-    
-    # Filter tiers_payants for received amounts and add them to combined_revenues_df
-    received_tiers_payants_for_chart = filtered_tiers_payants_df[
-        filtered_tiers_payants_df['Statut'].isin(['Réglé', 'Partiellement réglé'])
-    ].copy()
-
-    if not received_tiers_payants_for_chart.empty:
-        # If no specific 'Type_Acte' for Tiers Payants, assign a default
-        received_tiers_payants_for_chart['Type_Acte'] = 'Tiers Payant' 
-        received_tiers_payants_for_chart = received_tiers_payants_for_chart.rename(columns={'Montant_Recu': 'Montant'})
-        combined_revenues_df = pd.concat([combined_revenues_df, received_tiers_payants_for_chart[['Type_Acte', 'Montant']]], ignore_index=True)
-
+    received_tiers_payants_for_chart = filtered_tiers_payants_df[filtered_tiers_payants_df['Statut'].isin(['Réglé', 'Partiellement réglé'])].copy()
+    received_tiers_payants_for_chart['Type_Acte'] = 'Tiers Payant'
+    received_tiers_payants_for_chart = received_tiers_payants_for_chart.rename(columns={'Montant_Recu': 'Montant'})
+    combined_revenues_df = pd.concat([filtered_recettes_df[['Type_Acte', 'Montant']], received_tiers_payants_for_chart[['Type_Acte', 'Montant']]], ignore_index=True)
 
     if not combined_revenues_df.empty:
         type_counts = combined_revenues_df.groupby('Type_Acte')['Montant'].sum().sort_values(ascending=False)
-        if not type_counts.empty:
-            revenue_by_type_data['labels'] = type_counts.index.tolist()
-            revenue_by_type_data['data'] = type_counts.values.tolist()
-            colors = [
-                '#4CAF50', '#2196F3', '#FFC107', '#E91E63', '#9C27B0',
-                '#00BCD4', '#FF5722', '#CDDC39', '#607D8B', '#795548'
-            ]
-            for i in range(len(revenue_by_type_data['labels'])):
-                revenue_by_type_data['colors'].append(colors[i % len(colors)])
-    
-    # Graphique 3: Répartition des Dépenses par Catégorie (utilisant les DFs filtrés et incluant salaires)
+        revenue_by_type_data['labels'] = type_counts.index.tolist()
+        revenue_by_type_data['data'] = type_counts.values.tolist()
+        revenue_by_type_data['colors'] = ['#4CAF50', '#2196F3', '#FFC107', '#E91E63', '#9C27B0', '#00BCD4', '#FF5722', '#CDDC39', '#607D8B', '#795548']
+
+    # Graphique 3: Répartition des Dépenses
     expenses_by_category_data = {'labels': [], 'data': [], 'colors': []}
-    
-    # Combine regular expenses and salaries into a single DataFrame for the pie chart
-    combined_expenses_df_for_chart = filtered_depenses_df[['Categorie', 'Montant']].copy()
-    if not filtered_salaires_df.empty:
-        # Assign a specific category for salaries
-        salaries_for_chart = filtered_salaires_df.assign(
-            Categorie='Salaires & Charges Sociales', 
-            Montant=filtered_salaires_df['Total_Brut']
-        )
-        combined_expenses_df_for_chart = pd.concat([combined_expenses_df_for_chart, salaries_for_chart[['Categorie', 'Montant']]], ignore_index=True)
+    salaries_for_chart = filtered_salaires_df.assign(Categorie='Salaires & Charges Sociales', Montant=filtered_salaires_df['Total_Brut'])
+    combined_expenses_df_for_chart = pd.concat([filtered_depenses_df[['Categorie', 'Montant']], salaries_for_chart[['Categorie', 'Montant']]], ignore_index=True)
 
     if not combined_expenses_df_for_chart.empty:
         category_counts = combined_expenses_df_for_chart.groupby('Categorie')['Montant'].sum().sort_values(ascending=False)
-        if not category_counts.empty:
-            expenses_by_category_data['labels'] = category_counts.index.tolist()
-            expenses_by_category_data['data'] = category_counts.values.tolist()
-            colors = [
-                '#F44336', '#FF9800', '#673AB7', '#009688', '#FFEB3B',
-                '#8BC34A', '#795548', '#9E9E9E', '#607D8B', '#3F51B5'
-            ]
-            for i in range(len(expenses_by_category_data['labels'])):
-                expenses_by_category_data['colors'].append(colors[i % len(colors)])
+        expenses_by_category_data['labels'] = category_counts.index.tolist()
+        expenses_by_category_data['data'] = category_counts.values.tolist()
+        expenses_by_category_data['colors'] = ['#F44336', '#FF9800', '#673AB7', '#009688', '#FFEB3B', '#8BC34A', '#795548', '#9E9E9E', '#607D8B', '#3F51B5']
 
-
-    # --- DÉBUT DE L'AJOUT POUR LA DÉFINITION DE logged_in_full_name ---
+    # --- Récupération du nom de l'utilisateur connecté ---
     logged_in_full_name = None 
     user_email = session.get('email')
-    
     if user_email:
-        # Assurez-vous que utils.set_dynamic_base_dir a été appelé pour que login.load_users fonctionne correctement
-        # (normalement géré par before_request, mais bonne pratique de s'assurer)
         admin_email_from_session = session.get('admin_email', 'default_admin@example.com')
         utils.set_dynamic_base_dir(admin_email_from_session)
-        
         all_users_data = login.load_users()
         user_info = all_users_data.get(user_email)
         if user_info:
-            logged_in_full_name = f"{user_info.get('prenom', '')} {user_info.get('nom', '')}".strip()
-            if not logged_in_full_name:
-                logged_in_full_name = None
-    # --- FIN DE L'AJOUT POUR LA DÉFINITION DE logged_in_full_name ---
+            logged_in_full_name = f"{user_info.get('prenom', '')} {user_info.get('nom', '')}".strip() or None
 
     return render_template_string(
         comptabilite_template,
@@ -680,12 +564,11 @@ def home_comptabilite():
         current_date=current_date,
         currency=currency,
         total_revenues=total_revenues,
-        total_expenses=combined_total_expenses, # Pass the combined value
+        total_expenses=combined_total_expenses,
         net_profit=net_profit,
         monthly_data=monthly_data,
         revenue_by_type_data=revenue_by_type_data,
         expenses_by_category_data=expenses_by_category_data,
-        selected_month=selected_month_str,
         recettes=recettes_df.to_dict(orient='records'),
         depenses=depenses_df.to_dict(orient='records'),
         salaires=salaires_df.to_dict(orient='records'),
@@ -693,9 +576,10 @@ def home_comptabilite():
         documents_fiscaux=documents_fiscaux_df.to_dict(orient='records'),
         expense_categories=DEFAULT_EXPENSE_CATEGORIES,
         fiscal_document_types=DEFAULT_FISCAL_DOCUMENT_TYPES,
-        # --- PASSER LA NOUVELLE VARIABLE AU TEMPLATE ---
-        logged_in_doctor_name=logged_in_full_name # Utilise le même nom de variable que dans main_template pour cohérence
-        # --- FIN DU PASSAGE ---
+        logged_in_doctor_name=logged_in_full_name,
+        # Passer les dates au template pour qu'elles restent dans les champs
+        start_date=start_date_str,
+        end_date=end_date_str
     )
 
 # Recettes
@@ -1119,8 +1003,12 @@ def generate_compta_report():
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
 
-    start_dt = datetime.strptime(start_date_str, '%Y-%m-%d') if start_date_str else None
-    end_dt = datetime.strptime(end_date_str, '%Y-%m-%d') if end_date_str else None
+    try:
+        start_dt = datetime.strptime(start_date_str, '%Y-%m-%d') if start_date_str else None
+        end_dt = datetime.strptime(end_date_str, '%Y-%m-%d') if end_date_str else None
+    except ValueError:
+        flash("Format de date invalide. Veuillez utiliser AAAA-MM-JJ.", "danger")
+        return redirect(url_for('comptabilite.home_comptabilite', _anchor="rapports-tab"))
 
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -1668,13 +1556,11 @@ comptabilite_template = """
         </div>
         <div class="offcanvas-body">
             <div class="d-flex gap-2 mb-4">
-                <a href="{{ url_for('login.change_password') }}" class="btn btn-outline-secondary flex-fill">
-                    <i class="fas fa-key me-2"></i>Modifier passe
-                </a>
                 <a href="{{ url_for('login.logout') }}" class="btn btn-outline-secondary flex-fill">
                     <i class="fas fa-sign-out-alt me-2"></i>Déconnexion
                 </a>
             </div>
+            <form id="settingsForm" action="{{ url_for('settings') }}" method="POST">
             </form>
         </div>
     </div>
@@ -1811,9 +1697,13 @@ comptabilite_template = """
                                 
                                 <div class="row mt-4">
                                     <form class="row g-3 align-items-center mb-4 justify-content-center" method="get" action="{{ url_for('comptabilite.home_comptabilite') }}">
-                                        <div class="col-md-auto floating-label">
-                                            <input type="month" class="form-control" id="monthFilter" name="selected_month" value="{{ selected_month or '' }}" placeholder=" ">
-                                            <label for="monthFilter">Filtrer par Mois</label>
+                                        <div class="col-md-4 floating-label">
+                                            <input type="date" class="form-control" id="startDateFilter" name="start_date" value="{{ start_date or '' }}" placeholder=" ">
+                                            <label for="startDateFilter">Date de début</label>
+                                        </div>
+                                        <div class="col-md-4 floating-label">
+                                            <input type="date" class="form-control" id="endDateFilter" name="end_date" value="{{ end_date or '' }}" placeholder=" ">
+                                            <label for="endDateFilter">Date de fin</label>
                                         </div>
                                         <div class="col-md-auto">
                                             <button type="submit" class="btn btn-primary">
@@ -2560,135 +2450,129 @@ comptabilite_template = """
             Chart.defaults.plugins.datalabels.font = {weight:'600'};
 
             // Fonction pour initialiser le graphique de tendance mensuelle (Histogramme)
-    function initializeMonthlyChart() {
-        const ctx = document.getElementById('monthlyChart').getContext('2d');
-        const monthlyData = {{ monthly_data | tojson | safe }};
+                function initializeMonthlyChart() {
+                    const ctx = document.getElementById('monthlyChart').getContext('2d');
+                    const monthlyData = {{ monthly_data | tojson | safe }};
 
-        const hasRealData = monthlyData.revenues.some(val => val !== 0) ||
-                            monthlyData.expenses.some(val => val !== 0) ||
-                            monthlyData.profit.some(val => val !== 0);
+                    const hasRealData = monthlyData.revenues.some(val => val !== 0) ||
+                                        monthlyData.expenses.some(val => val !== 0) ||
+                                        monthlyData.profit.some(val => val !== 0);
 
-        const noDataMessageDiv = document.getElementById('monthlyNoDataMessage');
+                    const noDataMessageDiv = document.getElementById('monthlyNoDataMessage');
 
-        if (!hasRealData) {
-            ctx.canvas.style.display = 'none';
-            noDataMessageDiv.style.display = 'flex';
-            if (monthlyChart) { monthlyChart.destroy(); monthlyChart = null; }
-            return;
-        } else {
-            ctx.canvas.style.display = 'block';
-            noDataMessageDiv.style.display = 'none';
-        }
-
-        monthlyChart = new Chart(ctx, {
-            type: 'bar', // Changé en 'bar' pour un histogramme
-            data: {
-                labels: monthlyData.labels,
-                datasets: [
-                    {
-                        label: 'Recettes',
-                        data: monthlyData.revenues,
-                        backgroundColor: '#4CAF50', // Vert pour les recettes
-                        borderColor: '#4CAF50',
-                        borderWidth: 1,
-                        borderRadius: 4,
-                        categoryPercentage: 0.7,
-                        barPercentage: 0.8
-                    },
-                    {
-                        label: 'Dépenses',
-                        data: monthlyData.expenses,
-                        backgroundColor: '#F44336', // Rouge pour les dépenses
-                        borderColor: '#F44336',
-                        borderWidth: 1,
-                        borderRadius: 4,
-                        categoryPercentage: 0.7,
-                        barPercentage: 0.8
-                    },
-                    {
-                        label: 'Bénéfice Net',
-                        data: monthlyData.profit,
-                        backgroundColor: '#2196F3', // Bleu pour le bénéfice net
-                        borderColor: '#2196F3',
-                        borderWidth: 1,
-                        borderRadius: 4,
-                        categoryPercentage: 0.7,
-                        barPercentage: 0.8
+                    if (!hasRealData) {
+                        ctx.canvas.style.display = 'none';
+                        noDataMessageDiv.style.display = 'flex';
+                        if (monthlyChart) { monthlyChart.destroy(); monthlyChart = null; }
+                        return;
+                    } else {
+                        ctx.canvas.style.display = 'block';
+                        noDataMessageDiv.style.display = 'none';
                     }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: 'var(--text-color)'
-                        }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (label) {
-                                    label += ': ';
+
+                    monthlyChart = new Chart(ctx, {
+                        type: 'bar', // Changé en 'bar' pour un histogramme
+                        data: {
+                            labels: monthlyData.labels,
+                            datasets: [
+                                {
+                                    label: 'Recettes',
+                                    data: monthlyData.revenues,
+                                    backgroundColor: '#4CAF50', // Vert pour les recettes
+                                    borderColor: '#4CAF50',
+                                    borderWidth: 1,
+                                    borderRadius: 4,
+                                    categoryPercentage: 0.7,
+                                    barPercentage: 0.8
+                                },
+                                {
+                                    label: 'Dépenses',
+                                    data: monthlyData.expenses,
+                                    backgroundColor: '#F44336', // Rouge pour les dépenses
+                                    borderColor: '#F44336',
+                                    borderWidth: 1,
+                                    borderRadius: 4,
+                                    categoryPercentage: 0.7,
+                                    barPercentage: 0.8
+                                },
+                                {
+                                    label: 'Bénéfice Net',
+                                    data: monthlyData.profit,
+                                    backgroundColor: '#2196F3', // Bleu pour le bénéfice net
+                                    borderColor: '#2196F3',
+                                    borderWidth: 1,
+                                    borderRadius: 4,
+                                    categoryPercentage: 0.7,
+                                    barPercentage: 0.8
                                 }
-                                if (context.parsed.y !== null) {
-                                    // Correction pour le tooltip
-                                    label += new Intl.NumberFormat('fr-FR', { style: 'currency', currency: '{{ currency }}', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(context.parsed.y);
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    labels: {
+                                        color: 'var(--text-color)'
+                                    }
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    callbacks: {
+                                        label: function(context) {
+                                            let label = context.dataset.label || '';
+                                            if (label) {
+                                                label += ': ';
+                                            }
+                                            if (context.parsed.y !== null) {
+                                                // Correction pour le tooltip
+                                                label += new Intl.NumberFormat('fr-FR', { style: 'currency', currency: '{{ currency }}', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(context.parsed.y);
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                },
+                                // MODIFIÉ : Désactive l'affichage des chiffres sur les barres
+                                datalabels: {
+                                    display: false
                                 }
-                                return label;
+                            },
+                            scales: {
+                                x: {
+                                    ticks: {
+                                        color: 'var(--text-color-light)',
+                                        autoSkip: false,
+                                        maxRotation: 45,
+                                        minRotation: 45
+                                    },
+                                    grid: {
+                                        color: 'rgba(var(--text-color-rgb), 0.1)'
+                                    }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        color: 'var(--text-color-light)',
+                                        callback: function(value, index, values) {
+                                            // Correction pour les tics de l'axe Y
+                                            return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: '{{ currency }}', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+                                        }
+                                    },
+                                    grid: {
+                                        color: 'rgba(var(--text-color-rgb), 0.1)'
+                                    }
+                                }
+                            },
+                            indexAxis: 'x',
+                            parsing: {
+                                xAxisKey: 'label',
+                                yAxisKey: 'value'
                             }
                         }
-                    },
-                    // NOUVEAU: Configuration du plugin datalabels
-                    datalabels: {
-                        color: 'white', // Couleur du texte des labels
-                        anchor: 'end', // Position du label (à la fin de la barre)
-                        align: 'start', // Alignement du label (juste après la fin)
-                        formatter: function(value, context) {
-                            // Formater la valeur avec deux décimales
-                            if (value === 0) return '';
-                            return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: '{{ currency }}', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        ticks: {
-                            color: 'var(--text-color-light)',
-                            autoSkip: false,
-                            maxRotation: 45,
-                            minRotation: 45
-                        },
-                        grid: {
-                            color: 'rgba(var(--text-color-rgb), 0.1)'
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            color: 'var(--text-color-light)',
-                            callback: function(value, index, values) {
-                                // Correction pour les tics de l'axe Y
-                                return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: '{{ currency }}', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
-                            }
-                        },
-                        grid: {
-                            color: 'rgba(var(--text-color-rgb), 0.1)'
-                        }
-                    }
-                },
-                indexAxis: 'x',
-                parsing: {
-                    xAxisKey: 'label',
-                    yAxisKey: 'value'
+                    });
                 }
-            }
-        });
-    }
+                
             // Fonction pour initialiser le graphique de répartition des recettes par type d'acte (Camembert)
             function initializeRevenueByTypeChart() {
                 const ctx = document.getElementById('revenueByTypeChart').getContext('2d');
@@ -2898,6 +2782,7 @@ comptabilite_template = """
             });
         });
     </script>
+    {% include '_floating_assistant.html' %} 
 </body>
 </html>
 """

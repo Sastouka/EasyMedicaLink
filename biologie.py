@@ -748,6 +748,7 @@ biologie_template = """
             window.location.href = "{{ url_for('biologie.export_biologie_history') }}";
         }
     </script>
+    {% include '_floating_assistant.html' %}
 </body>
 </html>
 """

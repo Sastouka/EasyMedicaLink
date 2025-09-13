@@ -1,4 +1,4 @@
-# ia_assitant.py - v4.6 - Affichage harmonisé du nom du médecin + Responsive
+# ia_assitant.py - v5.0 - UX Améliorée avec Miniatures et Capacités Gemini étendues
 import os
 import pathlib
 import datetime
@@ -39,13 +39,13 @@ class Message(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
 # --- Configuration de l'API Gemini ---
-API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyDrBeZ-vF_ST0NuTBsBjmbLFHXpuAZkgrE") # Remplacez par votre clé
-if API_KEY == "AIzaSyDrBeZ-vF_ST0NuTBsBjmbLFHXpuAZkgrE":
+API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyALjQr4vF0coQaGDDtEr6wsdvRBUGCwPII") # Remplacez par votre clé
+if API_KEY == "Votre_Cle_API_GOOGLE":
     print("AVERTISSEMENT: La clé API Google n'est pas configurée.")
 
 try:
     genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-pro-latest')
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
 except Exception as e:
     print(f"Erreur critique lors de la configuration de l'API Gemini : {e}")
     model = None
@@ -63,6 +63,7 @@ ia_assitant_template = """
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <style>
         :root {
             --background-main: #f0f4f9; --surface-color: #ffffff; --primary-accent: #1967d2;
@@ -88,37 +89,10 @@ ia_assitant_template = """
         .delete-conv-btn:hover { background-color: #c4d7f7; color: #dc3545; }
         .main-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; padding: 1rem; }
         .chat-container { width: 100%; max-width: 900px; height: 100%; display: flex; flex-direction: column; background: var(--surface-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow); overflow: hidden; border: 1px solid #dee2e6; }
-        .chat-header {
-            padding: 1rem 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            background: #fff;
-            border-bottom: 1px solid #dee2e6;
-        }
-        .chat-header-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--primary-accent);
-            flex-grow: 1;
-        }
-        .back-to-home-btn {
-            background: #f1f3f5;
-            border: 1px solid #dee2e6;
-            color: var(--text-secondary);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-decoration: none;
-            transition: background-color 0.2s;
-        }
-        .back-to-home-btn:hover {
-            background-color: #e9ecef;
-        }
-
+        .chat-header { padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; background: #fff; border-bottom: 1px solid #dee2e6; }
+        .chat-header-title { font-size: 1.25rem; font-weight: 600; color: var(--primary-accent); flex-grow: 1; }
+        .back-to-home-btn { background: #f1f3f5; border: 1px solid #dee2e6; color: var(--text-secondary); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: background-color 0.2s; }
+        .back-to-home-btn:hover { background-color: #e9ecef; }
         .chat-messages { flex-grow: 1; padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; }
         .message { display: flex; align-items: flex-start; gap: 12px; max-width: 90%; animation: fadeIn 0.4s ease-out; position: relative; }
         .message .avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 500; flex-shrink: 0; font-size: 1.2rem; }
@@ -130,68 +104,36 @@ ia_assitant_template = """
         .user-message .text-content { background: var(--primary-accent); color: white; }
         .chat-input-area { padding: 1rem 1.5rem; border-top: 1px solid #dee2e6; background: #fff; }
         .file-preview-container { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-        .file-preview { display: inline-flex; align-items: center; gap: 10px; background-color: #e9ecef; padding: 8px 12px; border-radius: 8px; font-size: 0.9rem; }
-        .file-preview .cancel-file { cursor: pointer; color: var(--text-secondary); background: none; border: none; padding: 0 5px; }
+        .file-preview { display: inline-flex; align-items: center; gap: 10px; background-color: #e9ecef; padding: 5px 8px; border-radius: 8px; font-size: 0.9rem; }
+        .file-preview .cancel-file { cursor: pointer; color: var(--text-secondary); background: none; border: none; padding: 0 5px; font-size: 1.2rem; line-height: 1; }
         .chat-input-form { display: flex; gap: 10px; }
         #chat-textarea { flex-grow: 1; border: 1px solid #ced4da; border-radius: var(--border-radius); padding: 12px; font-size: 1rem; resize: none; }
         .chat-input-form button { background: var(--primary-accent); border: none; color: white; border-radius: 50%; width: 48px; height: 48px; cursor: pointer; flex-shrink: 0; }
         .chat-input-form button#file-btn { background: #f8f9fa; border: 1px solid #ced4da; color: var(--text-secondary); }
         .typing-indicator span { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ccc; margin: 0 2px; animation: bounce 1.4s infinite ease-in-out both; }
         .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
-        .action-buttons { position: absolute; bottom: 5px; right: 5px; display: flex; gap: 5px; opacity: 0; transition: opacity 0.2s; }
-        .ai-message:hover .action-buttons { opacity: 1; }
-        .action-btn { background: #e9ecef; border: 1px solid #ced4da; color: var(--text-secondary); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+        .action-buttons { position: absolute; bottom: 5px; right: -40px; display: flex; flex-direction: column; gap: 5px; opacity: 0; transition: all 0.2s; }
+        .message:hover .action-buttons { opacity: 1; right: 5px; }
+        .action-btn { background: #e9ecef; border: 1px solid #ced4da; color: var(--text-secondary); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
-        /* --- RESPONSIVE STYLES --- */
+        /* --- STYLES AJOUTÉS POUR UX --- */
+        .message .text-content .message-attachments { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        .message .text-content .message-thumbnail { max-width: 150px; max-height: 150px; border-radius: 8px; cursor: pointer; border: 1px solid #dee2e6; }
+        .file-preview .file-icon { font-size: 2rem; color: var(--text-secondary); }
+        .text-content pre { background-color: #282c34; color: #abb2bf; border-radius: 8px; padding: 1rem; border: 1px solid #dee2e6; white-space: pre-wrap; word-wrap: break-word; }
+        .text-content code { font-family: 'Courier New', Courier, monospace; }
+
         @media (max-width: 768px) {
-            body {
-                flex-direction: column;
-            }
-            .sidebar {
-                width: 100%;
-                height: 100%;
-                border-right: none;
-                border-bottom: 1px solid #dcdcdc;
-                position: fixed;
-                top: 0;
-                left: 0;
-                transform: translateX(-100%);
-                transition: transform 0.3s ease-in-out;
-                z-index: 1040; /* Above main content */
-            }
-            .sidebar.show {
-                transform: translateX(0);
-            }
-            .chat-container {
-                border-radius: 0;
-                box-shadow: none;
-                height: 100vh;
-                margin-top: 0;
-            }
-            .chat-header {
-                padding: 0.75rem 1rem;
-            }
-            .chat-messages {
-                padding: 1rem;
-                gap: 1rem;
-            }
-            .chat-input-area {
-                padding: 0.75rem 1rem;
-            }
-            .message {
-                max-width: 95%;
-            }
-            .back-to-home-btn {
-                display: none; /* Hide on mobile to avoid confusion with the sidebar toggle */
-            }
-            .sidebar-toggle-btn {
-                display: block; /* Show the menu button */
-                background: none;
-                border: none;
-                color: var(--text-secondary);
-                font-size: 1.5rem;
-                cursor: pointer;
-            }
+            body { flex-direction: column; }
+            .sidebar { width: 100%; height: 100%; border-right: none; border-bottom: 1px solid #dcdcdc; position: fixed; top: 0; left: 0; transform: translateX(-100%); transition: transform 0.3s ease-in-out; z-index: 1040; }
+            .sidebar.show { transform: translateX(0); }
+            .chat-container { border-radius: 0; box-shadow: none; height: 100vh; margin-top: 0; }
+            .chat-header { padding: 0.75rem 1rem; }
+            .chat-messages { padding: 1rem; gap: 1rem; }
+            .chat-input-area { padding: 0.75rem 1rem; }
+            .message { max-width: 95%; }
+            .back-to-home-btn { display: none; }
+            .sidebar-toggle-btn { display: block; background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; }
         }
     </style>
 </head>
@@ -232,7 +174,6 @@ ia_assitant_template = """
             <div class="chat-messages" id="chat-messages">
                 <div class="message ai-message">
                     <div class="avatar"><i class="fas fa-robot"></i></div>
-                    {# --- MODIFICATION : Logique d'affichage du nom harmonisée --- #}
                     <div class="text-content"><p>Bonjour Dr. {{ (logged_in_doctor_name if logged_in_doctor_name and logged_in_doctor_name != 'None' else config.doctor_name or 'Connecté') }}. Je suis Synapse, votre assistant médical.</p></div>
                 </div>
             </div>
@@ -240,7 +181,7 @@ ia_assitant_template = """
                 <div id="file-preview-container"></div>
                 <form class="chat-input-form" id="chat-form">
                     <button type="button" id="file-btn" title="Joindre un fichier"><i class="fas fa-paperclip"></i></button>
-                    <input type="file" id="file-input" name="file_upload" accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.doc,.docx,.txt" style="display:none;" multiple>
+                    <input type="file" id="file-input" name="file_upload" accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.doc,.docx,.txt,.mp4,.mov,.mp3,.wav" style="display:none;" multiple>
                     <textarea id="chat-textarea" name="question" placeholder="Votre message..." required></textarea>
                     <button type="submit" title="Envoyer"><i class="fas fa-paper-plane"></i></button>
                 </form>
@@ -248,8 +189,12 @@ ia_assitant_template = """
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
     <script>
         let currentConversationId = null;
+        let uploadedFilesCache = []; // Cache pour garder en mémoire les miniatures
+        
         const chatForm = document.getElementById('chat-form');
         const chatMessages = document.getElementById('chat-messages');
         const fileBtn = document.getElementById('file-btn');
@@ -261,10 +206,7 @@ ia_assitant_template = """
         const conversationsListDesktop = document.getElementById('conversations-list');
         const conversationsListMobile = document.getElementById('conversations-list-mobile');
 
-        document.addEventListener('DOMContentLoaded', () => {
-            loadConversations();
-        });
-        
+        document.addEventListener('DOMContentLoaded', () => loadConversations());
         fileBtn.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', handleFileSelection);
         newChatBtn.addEventListener('click', startNewConversation);
@@ -284,36 +226,70 @@ ia_assitant_template = """
 
         function handleFileSelection() {
             filePreviewContainer.innerHTML = '';
-            for (const file of fileInput.files) {
-                const preview = document.createElement('div');
-                preview.className = 'file-preview';
-                preview.innerHTML = `<span>${file.name}</span><button type="button" class="cancel-file" data-filename="${file.name}">&times;</button>`;
-                filePreviewContainer.appendChild(preview);
-            }
-            document.querySelectorAll('.cancel-file').forEach(btn => btn.addEventListener('click', removeFile));
+            uploadedFilesCache = []; 
+            const files = Array.from(fileInput.files);
+
+            files.forEach(file => {
+                const reader = new FileReader();
+                const fileData = { name: file.name, type: file.type, dataURL: null };
+                
+                reader.onload = (e) => {
+                    const preview = document.createElement('div');
+                    preview.className = 'file-preview';
+                    
+                    if (file.type.startsWith('image/')) {
+                        fileData.dataURL = e.target.result;
+                        preview.innerHTML = `<img src="${e.target.result}" alt="${file.name}" style="width: 40px; height: 40px; border-radius: 4px; object-fit: cover;"> <span>${file.name}</span>`;
+                    } else {
+                        let iconClass = "fa-file";
+                        if (file.type.includes("pdf")) iconClass = "fa-file-pdf";
+                        if (file.type.includes("sheet") || file.type.includes("excel")) iconClass = "fa-file-excel";
+                        if (file.type.includes("word")) iconClass = "fa-file-word";
+                        if (file.type.includes("audio")) iconClass = "fa-file-audio";
+                        if (file.type.includes("video")) iconClass = "fa-file-video";
+                        preview.innerHTML = `<i class="fas ${iconClass} file-icon"></i> <span>${file.name}</span>`;
+                    }
+                    
+                    const cancelButton = document.createElement('button');
+                    cancelButton.type = 'button';
+                    cancelButton.className = 'cancel-file';
+                    cancelButton.innerHTML = '&times;';
+                    cancelButton.dataset.filename = file.name;
+                    cancelButton.onclick = (event) => removeFile(event, file.name);
+                    
+                    preview.appendChild(cancelButton);
+                    filePreviewContainer.appendChild(preview);
+                };
+                
+                if (file.type.startsWith('image/')) {
+                    reader.readAsDataURL(file);
+                } else {
+                    reader.onload({ target: { result: null } }); // Trigger onload for non-image files
+                }
+                uploadedFilesCache.push(fileData);
+            });
         }
 
-        function removeFile(e) {
-            const fileName = e.target.dataset.filename;
+        function removeFile(e, fileName) {
             const dt = new DataTransfer();
-            for (const file of fileInput.files) {
+            Array.from(fileInput.files).forEach(file => {
                 if (file.name !== fileName) dt.items.add(file);
-            }
+            });
             fileInput.files = dt.files;
+            
+            // Re-render previews from the new file list
             handleFileSelection();
         }
 
         async function loadConversations() {
             const response = await fetch("{{ url_for('ia_assitant.get_conversations') }}");
             const conversations = await response.json();
-            
             const renderList = (listElement) => {
                 listElement.innerHTML = '';
                 conversations.forEach(conv => {
                     const item = document.createElement('div');
                     item.className = 'conversation-item';
                     item.dataset.id = conv.id;
-                    
                     const title = document.createElement('span');
                     title.className = 'title';
                     title.textContent = conv.title;
@@ -323,19 +299,16 @@ ia_assitant_template = """
                            bootstrap.Offcanvas.getInstance(document.getElementById('offcanvasSidebar')).hide();
                         }
                     };
-
                     const deleteBtn = document.createElement('button');
                     deleteBtn.className = 'delete-conv-btn';
                     deleteBtn.title = 'Supprimer la discussion';
                     deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
                     deleteBtn.onclick = (e) => deleteConversation(conv.id, e);
-
                     item.appendChild(title);
                     item.appendChild(deleteBtn);
                     listElement.appendChild(item);
                 });
             };
-            
             renderList(conversationsListDesktop);
             renderList(conversationsListMobile);
         }
@@ -343,28 +316,18 @@ ia_assitant_template = """
         async function deleteConversation(id, event) {
             event.stopPropagation();
             Swal.fire({
-                title: 'Êtes-vous sûr ?',
-                text: "Cette action est irréversible !",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#d33',
-                cancelButtonColor: '#3085d6',
-                confirmButtonText: 'Oui, supprimer !',
-                cancelButtonText: 'Annuler'
+                title: 'Êtes-vous sûr ?', text: "Cette action est irréversible !", icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#d33', cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Oui, supprimer !', cancelButtonText: 'Annuler'
             }).then(async (result) => {
                 if (result.isConfirmed) {
                     try {
-                        const response = await fetch(`{{ url_for('ia_assitant.home_ia_assitant') }}conversations/delete/${id}`, {
-                            method: 'DELETE'
-                        });
+                        const response = await fetch(`{{ url_for('ia_assitant.home_ia_assitant') }}conversations/delete/${id}`, { method: 'DELETE' });
                         const resData = await response.json();
                         if (!response.ok) throw new Error(resData.error || 'La suppression a échoué.');
-                        
                         Swal.fire('Supprimée!', 'La conversation a été supprimée.', 'success');
                         loadConversations();
-                        if (currentConversationId == id) {
-                            startNewConversation();
-                        }
+                        if (currentConversationId == id) startNewConversation();
                     } catch (error) {
                         Swal.fire('Erreur!', error.message, 'error');
                     }
@@ -372,14 +335,9 @@ ia_assitant_template = """
             });
         }
 
-        async function startNewConversation() {
+        function startNewConversation() {
             currentConversationId = null;
-            chatMessages.innerHTML = `
-                <div class="message ai-message">
-                    <div class="avatar"><i class="fas fa-robot"></i></div>
-                    {# --- MODIFICATION : Logique d'affichage du nom harmonisée --- #}
-                    <div class="text-content"><p>Bonjour Docteur {{ (logged_in_doctor_name if logged_in_doctor_name and logged_in_doctor_name != 'None' else config.doctor_name or 'Connecté') }}. Comment puis-je vous assister aujourd'hui ?</p></div>
-                </div>`;
+            chatMessages.innerHTML = `<div class="message ai-message"><div class="avatar"><i class="fas fa-robot"></i></div><div class="text-content"><p>Bonjour Docteur {{ (logged_in_doctor_name if logged_in_doctor_name and logged_in_doctor_name != 'None' else config.doctor_name or 'Connecté') }}. Comment puis-je vous assister aujourd'hui ?</p></div></div>`;
             document.querySelectorAll('.conversation-item.active').forEach(el => el.classList.remove('active'));
             questionTextarea.focus();
         }
@@ -388,12 +346,13 @@ ia_assitant_template = """
             const response = await fetch(`{{ url_for('ia_assitant.home_ia_assitant') }}conversations/${id}`);
             const data = await response.json();
             chatMessages.innerHTML = '';
-            data.messages.forEach(msg => appendMessage(msg.role === 'model' ? 'ai' : 'user', msg.content, false));
-            currentConversationId = id;
-            
-            document.querySelectorAll('.conversation-item').forEach(el => {
-                el.classList.toggle('active', el.dataset.id == id);
+            data.messages.forEach(msg => {
+                // Pour les anciens messages, on ne peut pas recréer les miniatures, on affiche juste le texte
+                appendMessage(msg.role === 'model' ? 'ai' : 'user', msg.content, true, []);
             });
+            chatMessages.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+            currentConversationId = id;
+            document.querySelectorAll('.conversation-item').forEach(el => el.classList.toggle('active', el.dataset.id == id));
             scrollToBottom();
         }
 
@@ -402,23 +361,19 @@ ia_assitant_template = """
             const question = questionTextarea.value.trim();
             if (!question && fileInput.files.length === 0) return;
 
-            const userText = question || `Fichiers: ${[...fileInput.files].map(f => f.name).join(', ')}`;
-            appendMessage('user', userText);
+            const attachmentsForDisplay = uploadedFilesCache.filter(f => f.dataURL);
+            appendMessage('user', question, true, attachmentsForDisplay);
             questionTextarea.value = '';
 
             const formData = new FormData();
             formData.append('question', question);
-            for (const file of fileInput.files) {
-                formData.append('file_upload', file);
-            }
-            if (currentConversationId) {
-                formData.append('conversation_id', currentConversationId);
-            }
-
+            for (const file of fileInput.files) formData.append('file_upload', file);
+            if (currentConversationId) formData.append('conversation_id', currentConversationId);
+            
             fileInput.value = '';
             filePreviewContainer.innerHTML = '';
             
-            const aiMessageDiv = appendMessage('ai', '<div class="typing-indicator"><span></span><span></span><span></span></div>');
+            const aiMessageDiv = appendMessage('ai', '<div class="typing-indicator"><span></span><span></span><span></span></div>', false);
             const aiTextContent = aiMessageDiv.querySelector('.text-content');
             
             try {
@@ -439,9 +394,18 @@ ia_assitant_template = """
                     const { value, done } = await reader.read();
                     if (done) break;
                     fullResponse += decoder.decode(value, { stream: true });
-                    aiTextContent.innerHTML = marked.parse(fullResponse);
+                    
+                    let processedHtml = marked.parse(fullResponse);
+                    processedHtml = processedHtml.replace(/\[thumbnail:([^\]]+)\]/g, (match, filename) => {
+                        const cachedFile = uploadedFilesCache.find(f => f.name.trim() === filename.trim());
+                        return (cachedFile && cachedFile.dataURL) ? `<img src="${cachedFile.dataURL}" alt="${filename}" class="message-thumbnail">` : '';
+                    });
+
+                    aiTextContent.innerHTML = processedHtml;
                     scrollToBottom();
                 }
+                
+                aiTextContent.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
                 addAiMessageActions(aiMessageDiv, fullResponse);
 
             } catch (error) {
@@ -449,35 +413,49 @@ ia_assitant_template = """
             }
         });
 
-        function appendMessage(sender, text, parseMarkdown = true) {
+        function appendMessage(sender, text, parseMarkdown = true, attachments = []) {
             const isUser = sender === 'user';
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
             const avatarIcon = isUser ? '<i class="fas fa-user-md"></i>' : '<i class="fas fa-robot"></i>';
-            const content = parseMarkdown ? marked.parse(text) : text;
-            messageDiv.innerHTML = `<div class="avatar">${avatarIcon}</div><div class="text-content">${content}</div>`;
+            const textContent = text ? (parseMarkdown ? marked.parse(text) : text) : '';
+            
+            let attachmentsHtml = '';
+            if (attachments && attachments.length > 0) {
+                attachmentsHtml = '<div class="message-attachments">';
+                attachments.forEach(file => {
+                    if (file.dataURL) attachmentsHtml += `<img src="${file.dataURL}" alt="${file.name}" class="message-thumbnail">`;
+                });
+                attachmentsHtml += '</div>';
+            }
+
+            messageDiv.innerHTML = `<div class="avatar">${avatarIcon}</div><div class="text-content">${textContent}${attachmentsHtml}</div>`;
             chatMessages.appendChild(messageDiv);
             scrollToBottom();
-            if (!isUser && text.includes("</p>")) {
+            
+            if (!isUser && text && text.length > 1) {
                  addAiMessageActions(messageDiv, text);
             }
             return messageDiv;
         }
         
         function addAiMessageActions(messageDiv, rawContent) {
-            const actions = document.createElement('div');
-            actions.className = 'action-buttons';
-            actions.innerHTML = `<button class="action-btn" title="Copier" onclick="copyToClipboard(this)"><i class="fas fa-copy"></i></button>`;
+            let actions = messageDiv.querySelector('.action-buttons');
+            if (!actions) {
+                actions = document.createElement('div');
+                actions.className = 'action-buttons';
+                actions.innerHTML = `<button class="action-btn" title="Copier" onclick="copyToClipboard(this)"><i class="fas fa-copy"></i></button>`;
+                messageDiv.appendChild(actions);
+            }
             messageDiv.dataset.rawContent = rawContent;
-            messageDiv.appendChild(actions);
         }
 
         function copyToClipboard(element) {
             const messageDiv = element.closest('.message');
             navigator.clipboard.writeText(messageDiv.dataset.rawContent);
-            const originalTitle = element.title;
-            element.title = 'Copié !';
-            setTimeout(() => { element.title = originalTitle; }, 2000);
+            const icon = element.querySelector('i');
+            icon.classList.replace('fa-copy', 'fa-check');
+            setTimeout(() => { icon.classList.replace('fa-check', 'fa-copy'); }, 2000);
         }
 
         function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
@@ -496,24 +474,19 @@ def home_ia_assitant():
         flash("Accès non autorisé.", "danger")
         return redirect(url_for('accueil.accueil'))
     
-    # --- MODIFICATION : Logique d'affichage du nom harmonisée ---
-    # 1. Charger la configuration pour avoir accès à config.doctor_name
     config = utils.load_config()
-
-    # 2. Récupérer le nom de l'utilisateur connecté
     user_email = session.get('email')
     all_users = login.load_users()
     user_info = all_users.get(user_email, {})
     logged_in_full_name = f"{user_info.get('prenom', '')} {user_info.get('nom', '')}".strip()
     
-    # 3. Mettre à None si le nom est vide pour que la logique du template fonctionne correctement
     if not logged_in_full_name:
         logged_in_full_name = None
 
     return render_template_string(
         ia_assitant_template, 
         logged_in_doctor_name=logged_in_full_name,
-        config=config  # Passer l'objet config complet au template
+        config=config
     )
 
 @ia_assitant_bp.route('/conversations', methods=['GET'])
@@ -539,7 +512,6 @@ def get_conversation_messages(conv_id):
 def delete_conversation(conv_id):
     """ Supprime une conversation spécifique. """
     if 'email' not in session: return jsonify({"error": "Non autorisé"}), 401
-    
     user_email = session['email']
     conv = Conversation.query.get(conv_id)
 
@@ -576,12 +548,26 @@ def chat_stream():
     
     prompt_parts, user_message_content, temp_files = [], [], []
 
-    system_instruction = """
-    Tu es Synapse, un assistant médical spécialisé pour l'application EasyMedicaLink.
-    Ton rôle est d'assister les professionnels de la santé.
-    Réponds UNIQUEMENT et STRICTEMENT aux questions relatives aux domaines suivants : médecine, santé, biologie, pharmacologie et radiologie.
-    Si une question sort de ce cadre (par exemple : histoire, finance, programmation, etc.), décline poliment la réponse en expliquant que tu es un assistant médical spécialisé.
-    Sois toujours professionnel, précis et factuel.
+    # --- NOUVEAU PROMPT SYSTÈME AMÉLIORÉ ---
+    system_instruction = f"""
+    Tu es Synapse, un assistant médical IA de pointe intégré à l'application EasyMedicaLink.
+    Date et heure actuelles : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.
+
+    **Mission Principale** :
+    Assister les professionnels de santé (médecins, pharmaciens, chercheurs) avec précision, rigueur et professionnalisme.
+
+    **Périmètre de Compétences STRICT** :
+    1.  **Domaines Autorisés** : Médecine, santé humaine, biologie, pharmacologie, radiologie, interprétation de résultats d'analyses, et gestion administrative de cabinet médical.
+    2.  **Sujets Interdits** : TOUT ce qui ne relève pas des domaines ci-dessus (ex: histoire, finance, programmation, culture générale). Si une question est hors sujet, décline poliment en rappelant ta spécialisation. Exemple : "Je suis Synapse, un assistant spécialisé dans le domaine médical. Je ne peux malheureusement pas répondre aux questions concernant la programmation."
+
+    **Directives de Communication** :
+    - **Clarté et Structure** : Utilise Markdown (titres, listes, gras, tableaux) pour structurer tes réponses. Formate le code avec des blocs de code appropriés.
+    - **Précision** : Fournis des réponses factuelles. Si une information est incertaine, nuance ta réponse.
+    - **Multimodalité** : Tu peux recevoir des images, des documents, de l'audio et de la vidéo.
+        - Pour analyser une image (radio, ECG, photo de symptôme), sois descriptif et méthodique.
+        - **IMPORTANT** : Si tu fais référence à une image envoyée par l'utilisateur dans ta réponse, utilise la balise `[thumbnail:nom_exact_du_fichier.ext]` pour que l'interface puisse l'afficher.
+    - **Sécurité** : Ne jamais demander, stocker ou deviner des informations personnelles identifiables (IPI) d'un patient. Toutes les données doivent rester anonymes.
+    - **Langage** : Reste formel et professionnel. Adresse-toi à l'utilisateur comme "Docteur".
     """
     prompt_parts.append(system_instruction)
 
@@ -591,13 +577,15 @@ def chat_stream():
             temp_path = os.path.join(dynamic_upload_folder, secure_name)
             file.save(temp_path)
             temp_files.append(temp_path)
+            
+            # Traitement spécifique pour les fichiers non-images/vidéos si nécessaire
             if secure_name.endswith(('.xlsx', '.xls')):
                 df = pd.read_excel(temp_path)
                 prompt_parts.append(f"Analyse du fichier Excel '{secure_name}':\n{df.to_string()}")
             else:
                 uploaded_file = genai.upload_file(path=temp_path)
                 prompt_parts.append(uploaded_file)
-            user_message_content.append(f"Fichier: {secure_name}")
+            user_message_content.append(f"Fichier joint: {secure_name}")
 
         if question:
             prompt_parts.append(question)
@@ -614,14 +602,19 @@ def chat_stream():
                 title = f"Analyse de {files[0].filename}"
             conv = Conversation(user_email=user_email, title=title)
             db.session.add(conv)
-            db.session.commit()
+            db.session.commit() # Commit pour obtenir l'ID de la nouvelle conversation
 
         user_msg = Message(conversation_id=conv.id, role='user', content="\n".join(user_message_content))
         db.session.add(user_msg)
         db.session.commit()
 
-        chat_history = [{'role': m.role, 'parts': [m.content]} for m in conv.messages]
-        chat_session = model.start_chat(history=chat_history[:-1])
+        # Construction de l'historique pour le modèle
+        chat_history = []
+        for msg in conv.messages:
+             # Le rôle pour l'API est 'model' pour l'IA, 'user' pour l'utilisateur
+            chat_history.append({'role': msg.role, 'parts': [part for part in msg.content.split('\n') if part]})
+
+        chat_session = model.start_chat(history=chat_history[:-1]) # Historique sans le dernier message de l'utilisateur
         
         full_response_text = ""
         try:

@@ -697,6 +697,7 @@ radiologie_template = """
             window.location.href = "{{ url_for('radiologie.export_radiologie_history') }}";
         }
     </script>
+    {% include '_floating_assistant.html' %} 
 </body>
 </html>
 """

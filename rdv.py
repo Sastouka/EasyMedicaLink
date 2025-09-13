@@ -441,6 +441,45 @@ def rdv_home():
             </body></html>
             """, date_rdv=date_rdv, time_rdv=time_rdv)
 
+        # 2. NOUVELLE VÉRIFICATION (MISE À JOUR)
+        # Un patient ne peut pas avoir 2 RDV le même jour AVEC LE MÊME MÉDECIN
+        if ((df["ID"] == pid) & (df["Date"] == date_rdv) & (df["Medecin_Email"] == medecin_email)).any():
+            return render_template_string("""
+            <!DOCTYPE html><html><head>
+              <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+            </head><body>
+              <script>
+                Swal.fire({
+                  icon: 'error',
+                  title: 'Rendez-vous Dupliqué',
+                  text: 'Ce patient (ID: {{ pid }}) a déjà un rendez-vous programmé pour le {{ date_rdv }} avec ce médecin.',
+                  confirmButtonText: 'OK'
+                }).then(() => {
+                  window.location.href = '{{ url_for("rdv.rdv_home") }}';
+                });
+              </script>
+            </body></html>
+            """, pid=pid, date_rdv=date_rdv)
+
+        # 3. VÉRIFICATION DES CHAMPS MANQUANTS (inchangé)
+        if not all([pid, nom, prenom, gender, dob_str, ant, phone, date_rdv, time_rdv, medecin_email]):
+            return render_template_string("""
+            <!DOCTYPE html><html><head>
+              <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+            </head><body>
+              <script>
+                Swal.fire({
+                  icon: 'warning',
+                  title: 'Champs manquants',
+                  text: 'Veuillez remplir tous les champs, y compris le médecin.',
+                  confirmButtonText: 'OK'
+                }).then(() => {
+                  window.location.href = '{{ url_for("rdv.rdv_home") }}';
+                });
+              </script>
+            </body></html>
+            """)
+
         if not all([pid, nom, prenom, gender, dob_str, ant, phone, date_rdv, time_rdv, medecin_email]):
             return render_template_string("""
             <!DOCTYPE html><html><head>
@@ -1662,6 +1701,28 @@ rdv_template = r"""
       margin-top: 0.5rem;
     }
   }
+
+  /* Améliorations responsives pour SweetAlert2 */
+  @media (max-width: 768px) {
+    .swal2-popup {
+      width: 90vw !important; /* Occupe 90% de la largeur de l'écran */
+      font-size: 0.9rem;   /* Réduit la taille de la police globale */
+    }
+    .swal2-title {
+      font-size: 1.25rem !important; /* Réduit la taille du titre */
+    }
+    .swal2-html-container {
+      font-size: 1rem !important; /* Ajuste la taille du texte principal */
+    }
+    .swal2-actions {
+      flex-wrap: wrap; /* Permet aux boutons de passer à la ligne */
+      gap: 0.5rem;
+    }
+    .swal2-confirm, .swal2-cancel {
+      width: 100% !important; /* Les boutons prennent toute la largeur */
+      margin: 0.25rem 0 !important; /* Empile les boutons verticalement */
+    }
+  }
 </style>
 </head>
 <body>
@@ -1846,8 +1907,8 @@ rdv_template = r"""
       </form>
       <div class="d-flex gap-2">
         <a href="{{ url_for('rdv.rdv_home') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-list me-1" style="color: #6C757D;"></i>Tous</a> {# Gray List Icon #}
-        <a href="{{ url_for('rdv.pdf_today') }}" target="_blank" class="btn btn-danger btn-sm">
-          <i class="fas fa-file-pdf me-1" style="color: #FFFFFF;"></i>RDV du Jour {# White PDF Icon #}
+        <a href="{{ url_for('rdv.rdv_home', date=iso_today) }}" class="btn btn-secondary btn-sm">
+          <i class="fas fa-calendar-day me-1"></i>RDV du Jour
         </a>
       </div>
     </div>
@@ -2189,6 +2250,7 @@ document.getElementById('patient_id').addEventListener('change',function(){
     });
   });
 </script>
+{% include '_floating_assistant.html' %} 
 </body>
 </html>
 """

@@ -325,14 +325,76 @@ def patient_rdv_home(admin_prefix):
         medecin_email = f.get("medecin_select", "").strip() # NOUVEAU: Récupérer l'email du médecin
 
         # Validation des champs obligatoires
-        if not all([pid, nom, prenom, gender, dob_str, ant, phone, date_rdv, time_rdv, medecin_email]): # NOUVEAU: medecin_email obligatoire
+        if not all([pid, nom, prenom, gender, dob_str, ant, phone, date_rdv, time_rdv, medecin_email]):
             return render_template_string(patient_rdv_template,
-                config=config, theme_vars=theme_vars, timeslots=all_available_timeslots, # Utiliser all_available_timeslots
+                config=config, theme_vars=theme_vars, timeslots=all_available_timeslots,
                 iso_today=iso_today, reserved_slots=reserved_slots,
                 message="Veuillez remplir tous les champs, y compris le médecin.", message_type="warning",
-                role=session.get('role'), disabled_periods=disabled_periods, # Passer le rôle et les périodes
+                role=session.get('role'), disabled_periods=disabled_periods,
                 today_disabled_reason=today_disabled_reason, doctors=doctors
             )
+
+        # Validation du format du numéro de téléphone
+        if not PHONE_RE.fullmatch(phone):
+            return render_template_string(patient_rdv_template,
+                config=config, theme_vars=theme_vars, timeslots=all_available_timeslots,
+                iso_today=iso_today, reserved_slots=reserved_slots,
+                message="Le format du numéro de téléphone est invalide. Utilisez un format comme +212XXXXXXXXX ou 0XXXXXXXXX.", message_type="warning",
+                role=session.get('role'), disabled_periods=disabled_periods,
+                today_disabled_reason=today_disabled_reason, doctors=doctors
+            )
+
+        # Validation de la date de naissance
+        try:
+            dob_date = datetime.strptime(dob_str, "%Y-%m-%d").date()
+            if dob_date > date.today():
+                raise ValueError
+        except ValueError:
+            return render_template_string(patient_rdv_template,
+                config=config, theme_vars=theme_vars, timeslots=all_available_timeslots,
+                iso_today=iso_today, reserved_slots=reserved_slots,
+                message="La date de naissance est invalide ou se situe dans le futur.", message_type="warning",
+                role=session.get('role'), disabled_periods=disabled_periods,
+                today_disabled_reason=today_disabled_reason, doctors=doctors
+            )
+
+        age_text = compute_age_str(dob_date)
+        full_name = f"{nom} {prenom}".strip()
+
+        # Validation de la date désactivée
+        disabled_reason = get_disabled_period_reason(date_rdv, disabled_periods)
+        if disabled_reason:
+             return render_template_string(patient_rdv_template,
+                config=config, theme_vars=theme_vars, timeslots=all_available_timeslots,
+                iso_today=iso_today, reserved_slots=reserved_slots,
+                message=f"La date du {date_rdv} est désactivée ({disabled_reason}). Veuillez choisir une autre date.", message_type="warning",
+                role=session.get('role'), disabled_periods=disabled_periods,
+                today_disabled_reason=today_disabled_reason, doctors=doctors
+            )
+
+        # --- DÉBUT DE LA CORRECTION D'ORDRE ---
+
+        # 1. VÉRIFICATION DU CRÉNEAU HORAIRE (MAINTENANT EN PREMIER)
+        if ((df["Date"] == date_rdv) & (df["Heure"] == time_rdv) & (df["Medecin_Email"] == medecin_email)).any():
+            return render_template_string(patient_rdv_template,
+                config=config, theme_vars=theme_vars, timeslots=all_available_timeslots,
+                iso_today=iso_today, reserved_slots=reserved_slots,
+                message=f"Le créneau du {date_rdv} à {time_rdv} est déjà réservé pour le médecin sélectionné. Veuillez choisir une autre heure ou date.", message_type="warning",
+                role=session.get('role'), disabled_periods=disabled_periods,
+                today_disabled_reason=today_disabled_reason, doctors=doctors
+            )
+
+        # 2. VÉRIFICATION DU RDV DUPLIQUÉ POUR LE PATIENT (MAINTENANT EN SECOND)
+        if ((df["ID"] == pid) & (df["Date"] == date_rdv) & (df["Medecin_Email"] == medecin_email)).any():
+            return render_template_string(patient_rdv_template,
+                config=config, theme_vars=theme_vars, timeslots=all_available_timeslots,
+                iso_today=iso_today, reserved_slots=reserved_slots,
+                message=f"Vous avez déjà un rendez-vous planifié pour le {date_rdv} avec ce médecin. Un seul rendez-vous par jour est autorisé.", message_type="warning",
+                role=session.get('role'), disabled_periods=disabled_periods,
+                today_disabled_reason=today_disabled_reason, doctors=doctors
+            )
+            
+        # --- FIN DE LA CORRECTION D'ORDRE ---
 
         # Validation du format du numéro de téléphone
         if not PHONE_RE.fullmatch(phone):
@@ -1299,6 +1361,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
 });
 </script>
+{% include '_floating_assistant.html' %} 
 </body>
 </html>
 """

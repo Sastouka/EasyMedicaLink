@@ -1,4 +1,4 @@
-# activation.py – gestion licences & activation
+# activation.py – gestion licences & activation (VERSION CORRIGÉE)
 from __future__ import annotations
 import os, json, uuid, hashlib, socket, requests, calendar
 from datetime import date, timedelta
@@ -29,7 +29,6 @@ def _week_of_month(d: date) -> int:
 def get_hardware_id() -> str:
     return hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()[:16]
 
-# MODIFIÉ : La logique de génération de clé a été entièrement revue selon vos instructions.
 def generate_activation_key_for_user(
     hwid: str, plan: str, ref: Optional[date] = None
 ) -> str:
@@ -42,24 +41,17 @@ def generate_activation_key_for_user(
     """
     ref = ref or date.today()
     plan_lower = plan.lower().strip()
-    date_component = "" # Initialisé vide
+    date_component = ""
 
-    # --- NOUVELLE LOGIQUE DE GÉNÉRATION ---
     if plan_lower.startswith("essai"):
-        # Pour l'essai, on utilise le mois, l'année et la semaine du mois
         date_component = ref.strftime("%m%Y") + str(_week_of_month(ref))
     elif plan_lower == "1 mois":
-        # Pour 1 mois, on lie la clé au jour, mois et année exacts
         date_component = ref.strftime("%d%m%Y")
     elif plan_lower == "1 an":
-        # Pour 1 an, on lie la clé uniquement à l'année
         date_component = ref.strftime("%Y")
     elif plan_lower == "illimité":
-        # Pour illimité, aucun composant de date n'est utilisé
         date_component = ""
-    # --- FIN DE LA NOUVELLE LOGIQUE ---
 
-    # Le payload est construit avec le composant de date approprié
     payload = f"{hwid}{SECRET_SALT}{plan_lower}{date_component}"
     digest  = hashlib.sha256(payload.encode()).hexdigest().upper()[:16]
     return "-".join(digest[i:i+4] for i in range(0, 16, 4))
@@ -68,11 +60,17 @@ def generate_activation_key_for_user(
 # 4. Accès users.json
 # ─────────────────────────────────────────────────────────────
 def _user() -> Optional[dict]:
-    return login.load_users().get(session.get("email"))
+    email = session.get("email")
+    if not email:
+        return None
+    return login.load_users().get(email)
 
 def _save_user(u: dict):
+    email = session.get("email")
+    if not email:
+        return
     users = login.load_users()
-    users[session["email"]] = u
+    users[email] = u
     login.save_users(users)
         
 def _ensure_placeholder(u: dict):
@@ -136,23 +134,16 @@ def check_activation() -> bool:
     admin_owner_email = u.get("owner")
     if not admin_owner_email:
         return False
+    
+    all_users = login.load_users()
+    admin_owner_user = all_users.get(admin_owner_email)
 
-    session_email_backup = session.get("email")
-    session_admin_email_backup = session.get("admin_email")
+    if not admin_owner_user or "activation" not in admin_owner_user:
+        return False
 
-    try:
-        session["email"] = admin_owner_email
-        session["admin_email"] = admin_owner_email 
-        admin_owner_user = _user()
-        
-        if not admin_owner_user or "activation" not in admin_owner_user:
-            return False
+    admin_act = admin_owner_user["activation"]
+    return _check_single_activation_record(admin_act)
 
-        admin_act = admin_owner_user["activation"]
-        return _check_single_activation_record(admin_act)
-    finally:
-        session["email"] = session_email_backup
-        session["admin_email"] = session_admin_email_backup
 
 def update_activation(plan: str, code: str):
     u = _user()
@@ -249,7 +240,9 @@ body{background:#f8f9fa; display: flex; align-items: center; justify-content: ce
 </div></div></div></div>
 <script>
 function setPlan(p){document.getElementById('planField').value=p;}
-</script></body></html>"""
+</script>
+{% include '_floating_assistant.html' %}
+</body></html>"""
 
 failed_activation_template = """<html>
 {{ pwa_head()|safe }}
@@ -270,7 +263,8 @@ orders: Dict[str, tuple[str,str]] = {}
 def activation():
     login._set_login_paths()
 
-    if check_activation():
+    # Si la licence est DÉJÀ valide, on redirige vers l'accueil.
+    if "email" in session and check_activation():
         return redirect(url_for("accueil.accueil"))
 
     hwid, today = get_hardware_id(), date.today()
@@ -279,39 +273,20 @@ def activation():
                month_year=today.strftime("%m/%Y"),
                TRIAL_DAYS=TRIAL_DAYS)
 
-    current_user_data = _user()
-    current_activation = current_user_data.get("activation", {})
-    current_plan_is_expired_default_trial = (
-        current_activation.get("plan", "").startswith("essai") and
-        current_activation.get("activation_code") == "0000-0000-0000-0000" and
-        not (date.today() <= date.fromisoformat(current_activation.get("activation_date", date.today().isoformat())) + timedelta(days=TRIAL_DAYS))
-    )
-    ctx['current_plan_is_expired_default_trial'] = current_plan_is_expired_default_trial
-
     if request.method == "POST":
         plan = request.form["choix"]
         code = request.form.get("activation_code","").strip().upper()
         
-        if plan.startswith("essai"):
-            if code == "0000-0000-0000-0000":
-                if current_plan_is_expired_default_trial:
-                    flash("Votre période d'essai gratuite avec cette clé est terminée. Veuillez choisir un plan payant.", "danger")
-                    return render_template_string(activation_template, **ctx)
-                else:
-                    update_activation(plan, code)
-                    flash("Essai activé !","success")
-                    return redirect(url_for("accueil.accueil"))
-            else:
-                flash("Clé essai incorrecte. Pour le plan d'essai, la clé doit être '0000-0000-0000-0000'.","danger")
-                return render_template_string(activation_template, **ctx)
-
         tariffs = {"1 mois":"25.00","1 an":"50.00","illimité":"120.00"}
         if plan in tariffs:
+            # Vérification de la clé manuelle (si fournie)
             expected_paid_code = generate_activation_key_for_user(hwid, plan, today)
             if code and code == expected_paid_code:
                 update_activation(plan, code)
                 flash("Plan activé par clé !","success")
                 return redirect(url_for("accueil.accueil"))
+
+            # Sinon, on lance le paiement PayPal
             try:
                 oid, url = create_paypal_order(
                     tariffs[plan],
@@ -321,8 +296,9 @@ def activation():
                 orders[oid] = (plan, expected_paid_code)
                 return redirect(url)
             except Exception as e:
-                flash(f"PayPal error : {e}","danger")
-            return render_template_string(activation_template, **ctx)
+                flash(f"Erreur PayPal : {e}","danger")
+        else:
+            flash("Plan de paiement invalide sélectionné.", "danger")
 
     return render_template_string(activation_template, **ctx)
 
@@ -342,66 +318,3 @@ def paypal_cancel():
     login._set_login_paths()
     flash("Paiement annulé.","warning")
     return redirect(url_for("activation.activation"))
-
-# ─────────────────────────────────────────────────────────────
-# 9. Middleware de blocage (Version révisée)
-# ─────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────
-# 9. Middleware de blocage (Version finale mise à jour)
-# ─────────────────────────────────────────────────────────────
-def init_app(app):
-    @app.before_request
-    def _guard():
-        # 1. Exclure les fichiers statiques et PWA
-        if request.path.startswith(('/static/', '/icon/')) or request.path in [
-            '/sw.js', '/manifest.webmanifest', '/service-worker.js', '/offline'
-        ]:
-            return
-
-        # --- DÉBUT DE LA MODIFICATION ---
-        # 2. Donner un accès prioritaire et SANS CONNEXION à toute la section développeur
-        if request.blueprint == "developpeur_bp":
-            return  # Accès direct, aucune autre vérification n'est nécessaire
-        # --- FIN DE LA MODIFICATION ---
-
-        # 3. Définir les chemins de configuration pour le reste de l'application
-        login._set_login_paths()
-
-        # 4. Liste des autres pages publiques exemptées de vérification
-        exempt_from_all_checks = {
-            "login.login", "login.register", "login.forgot_password", "login.reset_password",
-            "activation.activation", "activation.paypal_success", "activation.paypal_cancel",
-            "guide.guide_home", "patient_rdv.patient_rdv_home", 
-            "patient_rdv.get_reserved_slots_patient"
-        }
-
-        if request.endpoint in exempt_from_all_checks:
-            admin_email = session.get('admin_email', 'default_admin@example.com')
-            utils.set_dynamic_base_dir(admin_email)
-            return
-
-        # --- À partir d'ici, toutes les autres routes nécessitent une connexion ---
-
-        # 5. Vérifier si l'utilisateur est connecté
-        if "email" not in session or "admin_email" not in session:
-            return redirect(url_for("login.login"))
-
-        # 6. Définir le répertoire de données pour l'utilisateur connecté
-        utils.set_dynamic_base_dir(session['admin_email'])
-        
-        # 7. Vérifier si le compte est actif
-        current_user_data = _user()
-        if not current_user_data:
-             session.clear()
-             flash("Utilisateur non trouvé. Veuillez vous reconnecter.", "danger")
-             return redirect(url_for("login.login"))
-
-        if not current_user_data.get("active", True):
-            session.clear()
-            flash("Votre compte a été désactivé. Veuillez contacter l'administrateur.", "warning")
-            return redirect(url_for("login.login"))
-
-        # 8. Vérifier la licence pour tous les utilisateurs connectés
-        if not check_activation():
-            flash("Votre licence est invalide ou a expiré. Veuillez activer le produit.", "warning")
-            return redirect(url_for("activation.activation"))

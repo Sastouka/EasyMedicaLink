@@ -1162,43 +1162,11 @@ gestion_patient_template = """
             </div>
             <div class="offcanvas-body">
                 <div class="d-flex gap-2 mb-4">
-                    <a href="{{ url_for('login.change_password') }}" class="btn btn-outline-secondary flex-fill">
-                        <i class="fas fa-key me-2" style="color: #FFD700;"></i>Modifier passe
-                    </a>
                     <a href="{{ url_for('login.logout') }}" class="btn btn-outline-secondary flex-fill">
                         <i class="fas fa-sign-out-alt me-2" style="color: #DC143C;"></i>Déconnexion
                     </a>
                 </div>
                 <form id="settingsForm" action="{{ url_for('settings') }}" method="POST">
-                    <div class="mb-3 floating-label">
-                        <input type="text" class="form-control" name="nom_clinique" id="nom_clinique" value="{{ config.nom_clinique or '' }}" placeholder=" ">
-                        <label for="nom_clinique">Nom de la clinique</label>
-                    </div>
-                    <div class="mb-3 floating-label">
-                        <input type="text" class="form-control" name="cabinet" id="cabinet" value="{{ config.cabinet or '' }}" placeholder=" ">
-                        <label for="cabinet">Cabinet</label>
-                    </div>
-                    <div class="mb-3 floating-label">
-                        <input type="text" class="form-control" name="centre_medecin" id="centre_medecin" value="{{ config.centre_medical or '' }}" placeholder=" ">
-                        <label for="centre_medecin">Centre médical</label>
-                    </div>
-                    <div class="mb-3 floating-label">
-                        <input type="text" class="form-control" name="nom_medecin" id="nom_medecin" value="{{ config.doctor_name or '' }}" placeholder=" ">
-                        <label for="nom_medecin">Nom du médecin</label>
-                    </div>
-                    <div class="mb-3 floating-label">
-                        <input type="text" class="form-control" name="lieu" id="lieu" value="{{ config.location or '' }}" placeholder=" ">
-                        <label for="lieu">Lieu</label>
-                    </div>
-                    <div class="mb-3 floating-label">
-                        <select class="form-select" name="theme" id="theme_select" placeholder=" ">
-                            {% for t in theme_names %}<option value="{{ t }}" {% if config.theme == t %}selected{% endif %}>{{ t.capitalize() }}</option>{% endfor %}
-                        </select>
-                        <label for="theme_select">Thème</label>
-                    </div>
-                    <button type="submit" class="btn btn-success w-100">
-                        <i class="fas fa-save me-2"></i>Enregistrer
-                    </button>
                 </form>
             </div>
         </div>
@@ -1768,6 +1736,7 @@ gestion_patient_template = """
                 });
             });
         </script>
+        {% include '_floating_assistant.html' %} 
     </body>
     </html>
 """

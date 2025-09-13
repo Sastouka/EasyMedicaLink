@@ -938,7 +938,7 @@ main_template = """
                 <div class="card mt-4">
                   <div class="card-body d-flex justify-content-around flex-wrap gap-2">
                     <button type="button" id="refreshBtn" class="btn btn-primary"
-                            onclick="$('#consultationsTable').DataTable().ajax.reload();">
+                             onclick="refreshSuiviTab()">
                       <i class="fas fa-sync-alt me-2" style="color: #FFFFFF;"></i>Rafraîchir {# White Sync Alt Icon #}
                     </button>
                     <button type="button" class="btn btn-outline-success" onclick="generateHistoryPDF()">
@@ -1128,7 +1128,7 @@ main_template = """
     // Gestion de la mise à jour des champs patient lors de la sélection/saisie de l'ID patient dans l'onglet "Infos Base"
     document.getElementById("patient_id").addEventListener("change", function() {
       var id = this.value.trim();
-      console.log("Frontend: Patient ID modifié (Infos Base):", id);
+      var id = this.value.trim();
       console.log("Frontend: patientData[id] lookup result (Infos Base):", patientData[id]);
 
       if(patientData[id]){
@@ -1680,9 +1680,10 @@ main_template = """
         if (initialPatientId) {
             // Déclenche l'événement 'change' pour que la logique de remplissage s'exécute
             // et remplisse les champs de l'onglet "Suivi" et charge la dernière consultation.
-            patientIdInput.dispatchEvent(new Event('change'));
+            
+            // patientIdInput.dispatchEvent(new Event('change')); // <-- LIGNE MISE EN COMMENTAIRE
         }
-    }
+        }
 
 
   }); // Fin de DOMContentLoaded
@@ -1730,10 +1731,41 @@ if (doctorNameInput) {
             doctorNameInput.classList.add('not(:placeholder-shown)');
         } else {
             doctorNameInput.classList.remove('not(:placeholder-shown)');
-        }
+        }        
     });
+    
+             // AJOUTEZ CETTE NOUVELLE FONCTION
+    function refreshSuiviTab() {
+      // 1. Récupère l'ID du patient depuis le premier onglet ("Infos Base")
+      const patientIdFromTab1 = document.getElementById('patient_id').value.trim();
+
+      if (!patientIdFromTab1) {
+          Swal.fire({
+              icon: 'info',
+              title: 'Aucun patient sélectionné',
+              text: "Veuillez d'abord saisir un ID Patient dans l'onglet 'Infos Base'."
+          });
+          return;
+      }
+
+      // 2. Met à jour les champs ID et Nom dans l'onglet "Suivi"
+      document.getElementById('suivi_patient_id').value = patientIdFromTab1;
+
+      // Met aussi à jour le nom pour la cohérence, en utilisant les données déjà chargées
+      if (patientData && patientIdFromTab1 in patientData) {
+          document.getElementById('suivi_patient_name').value = patientData[patientIdFromTab1].name || '';
+      } else {
+          document.getElementById('suivi_patient_name').value = '';
+      }
+
+      // 3. Recharge la table, qui utilisera maintenant le bon ID
+      $('#consultationsTable').DataTable().ajax.reload();
+
+      console.log(`Onglet Suivi rafraîchi avec l'ID du premier onglet : ${patientIdFromTab1}`);
+    }
 }
 </script>
+{% include '_floating_assistant.html' %} 
 </body>
 </html>
 """

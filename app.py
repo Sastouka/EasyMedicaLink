@@ -1,223 +1,194 @@
+# app.py (VERSION COMPLÈTE ET CORRIGÉE POUR LE MODE TEXTE)
 import os
+from datetime import datetime, timedelta
 import webbrowser
-# MODIFIÉ : Importation spécifique pour le blueprint et la base de données de l'assistant IA
-from ia_assitant import ia_assitant_bp, db as ia_db
-from flask import Flask, session, redirect, url_for, request, render_template_string, flash
-# Construire le chemin absolu vers le nouvel emplacement du dossier 'instance'
-instance_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MEDICALINK_DATA', 'instance')
-
-# Créer l'application en spécifiant le nouveau chemin
-app = Flask(__name__, instance_path=instance_folder_path)
-from datetime import timedelta
-
-# --- NOUVEAUX IMPORTS POUR FIREBASE ET LA PLANIFICATION ---
 import json
-from firebase import FirebaseManager
-from apscheduler.schedulers.background import BackgroundScheduler
-# ---------------------------------------------------------
 
-# ───────────── 1. Création de l’application
+# --- 1. CHARGEMENT DE LA CONFIGURATION EXTERNE ---
+try:
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'email.json')
+    with open(config_path, 'r') as f:
+        secrets = json.load(f)
+        for key, value in secrets.items():
+            os.environ[key] = value
+    print("✅ Clés chargées avec succès depuis email.json")
+except FileNotFoundError:
+    print("🔥 ATTENTION: Fichier email.json non trouvé.")
+except Exception as e:
+    print(f"🔥 ERREUR lors de la lecture de email.json: {e}")
+
+# --- 2. IMPORTS DES MODULES DE L'APPLICATION ---
+from flask import Flask, session, redirect, url_for, request, flash
+from flask_mail import Mail
+from apscheduler.schedulers.background import BackgroundScheduler
+
+# Import de tous les Blueprints de l'application
+from ia_assitant import ia_assitant_bp, db as ia_db
+# MODIFICATION: Suppression de l'import de AVAILABLE_VOICES
+from ia_assistant_synapse import ia_assistant_synapse_bp
+import activation, theme, utils, pwa, login, accueil, administrateur, rdv, facturation, statistique, developpeur, routes, patient_rdv, biologie, radiologie, pharmacie, comptabilite, gestion_patient, guide
+from firebase import FirebaseManager
+
+mail = Mail()
+
+# --- 3. CRÉATION DE L'APPLICATION FLASK (APPLICATION FACTORY) ---
 def create_app():
-    app = Flask(
-        __name__,
-        static_folder='static',
-        static_url_path='/static',
-        template_folder='templates'
-    )
-    # Utiliser une clé secrète depuis les variables d'environnement
-    app.secret_key = os.environ.get("SECRET_KEY", "dev")
-    app.permanent_session_lifetime = timedelta(days=7) # Les sessions durent 7 jours
+    instance_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MEDICALINK_DATA', 'instance')
+    app = Flask(__name__, instance_path=instance_folder_path, static_folder='static', static_url_path='/static', template_folder='templates')
     
-    # NOUVEAU : Configuration de la base de données pour l'assistant IA
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///medical_assistant.db'
+    # Configuration générale de l'application
+    app.secret_key = os.environ.get("SECRET_KEY", "une_cle_secrete_par_defaut_pour_le_dev")
+    app.permanent_session_lifetime = timedelta(days=7)
+
+    # Configuration de la base de données (SQLAlchemy)
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url and db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url or f"sqlite:///{os.path.join(app.instance_path, 'medical_assistant.db')}"
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-    # NOUVEAU : Initialisation de la base de données avec l'application Flask
-    ia_db.init_app(app)
+    # Configuration de l'envoi d'emails (Flask-Mail)
+    app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+    app.config['MAIL_PORT'] = 587
+    app.config['MAIL_USE_TLS'] = True
+    app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+    app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
     
-    # ───────────── 2. Thèmes
-    import theme
+    # Initialisation des extensions Flask
+    ia_db.init_app(app)
+    mail.init_app(app)
     theme.init_theme(app)
 
+    # Processeurs de contexte pour injecter des variables dans tous les templates
     @app.context_processor
     def inject_theme_names():
         return {"theme_names": list(theme.THEMES.keys())}
 
-    # ───────────── Injection des paramètres globaux dans tous les templates
-    import utils
-
     @app.context_processor
     def inject_config_values():
-        cfg = utils.load_config()
+        cfg = utils.load_config() if utils.CONFIG_FILE else {}
         return {
-            'app_name':             cfg.get('app_name', 'EasyMedicalink'),
-            'theme':                cfg.get('theme', 'clair'),
-            'logo_path':            cfg.get('logo_path', '/static/pwa/icon-512.png'),
+            'app_name': cfg.get('app_name', 'EasyMedicalink'),
+            'theme': cfg.get('theme', 'clair'),
+            'logo_path': cfg.get('logo_path', '/static/pwa/icon-512.png'),
             'background_file_path': cfg.get('background_file_path', '')
         }
 
-    # ───────────── Enregistrement des Blueprints
-    import pwa
-    import login
-    import accueil
-    import administrateur
-    import rdv
-    import facturation
-    import statistique
-    import developpeur
-    import routes 
-    import activation 
-    import patient_rdv
-    import biologie
-    import radiologie
-    import pharmacie
-    import comptabilite
-    import gestion_patient
-    import guide
+    # MODIFICATION: Suppression du context processor qui injectait les voix.
+    # Cette fonction n'est plus nécessaire.
 
-    # Enregistrer les Blueprints
-    app.register_blueprint(pwa.pwa_bp)
-    app.register_blueprint(guide.guide_bp)
-    app.register_blueprint(login.login_bp)
-    app.register_blueprint(accueil.accueil_bp)
-    app.register_blueprint(administrateur.administrateur_bp)
-    app.register_blueprint(developpeur.developpeur_bp)
-    app.register_blueprint(rdv.rdv_bp, url_prefix="/rdv")
-    app.register_blueprint(facturation.facturation_bp)
-    app.register_blueprint(statistique.statistique_bp, url_prefix="/statistique")
-    app.register_blueprint(activation.activation_bp)
-    app.register_blueprint(patient_rdv.patient_rdv_bp)
-    app.register_blueprint(biologie.biologie_bp)
-    app.register_blueprint(radiologie.radiologie_bp)
-    app.register_blueprint(pharmacie.pharmacie_bp)
-    app.register_blueprint(comptabilite.comptabilite_bp)
-    app.register_blueprint(gestion_patient.gestion_patient_bp, url_prefix='/gestion_patient')
-    # MODIFIÉ : Utilisation de la variable importée directement
-    app.register_blueprint(ia_assitant_bp) 
+    # AMÉLIORATION : Centralisation de l'enregistrement des Blueprints
+    blueprints_to_register = [
+        # Blueprints sans préfixe d'URL
+        (pwa.pwa_bp, None), (guide.guide_bp, None), (login.login_bp, None),
+        (accueil.accueil_bp, None), (administrateur.administrateur_bp, None),
+        (developpeur.developpeur_bp, None), (facturation.facturation_bp, None),
+        (patient_rdv.patient_rdv_bp, None), (biologie.biologie_bp, None),
+        (radiologie.radiologie_bp, None), (pharmacie.pharmacie_bp, None),
+        (comptabilite.comptabilite_bp, None), (ia_assitant_bp, None),
+        (ia_assistant_synapse_bp, None),
 
-    # ───────────── 7. Route racine
+        # Blueprints avec préfixe d'URL
+        (rdv.rdv_bp, "/rdv"),
+        (statistique.statistique_bp, "/statistique"),
+        (activation.activation_bp, "/activation"),
+        (gestion_patient.gestion_patient_bp, '/gestion_patient')
+    ]
+
+    for bp, url_prefix in blueprints_to_register:
+        app.register_blueprint(bp, url_prefix=url_prefix)
+    print("✅ Blueprints enregistrés.")
+    
+    # Route racine
     @app.route("/", methods=["GET"])
     def root():
-        return redirect(url_for("login.login")) if "email" not in session else redirect(url_for("accueil.accueil"))
+        if "email" in session:
+            return redirect(url_for("accueil.accueil"))
+        return redirect(url_for("login.login"))
 
-    # ───────────── 8. Configuration des chemins dynamiques par administrateur
+    # Gardien de sécurité global s'exécutant avant chaque requête
     @app.before_request
-    def set_dynamic_paths_for_current_admin():
-        admin_email = session.get('admin_email', 'default_admin@example.com')
-        # print(f"DEBUG: L'application utilise le répertoire de données pour : {admin_email}") # Décommenter pour debug
+    def central_request_guard():
+        # Accès public pour les assets statiques et le service worker
+        if request.path.startswith(('/static/', '/icon/')) or request.path in ['/sw.js', '/manifest.webmanifest', '/service-worker.js', '/offline']:
+            return
 
-        utils.set_dynamic_base_dir(admin_email)
-        rdv.set_rdv_dirs()
-        admin_email_prefix_for_patient_rdv = admin_email.split('@')[0]
-        patient_rdv.set_patient_rdv_dirs()
+        # Accès public pour les blueprints ne nécessitant pas de connexion
+        if request.blueprint in ['developpeur_bp', 'ia_assistant_synapse']:
+            return
+        
+        # Accès public pour des pages spécifiques (connexion, inscription, etc.)
+        public_endpoints = [
+            'login.login', 'login.register', 'login.complete_registration',
+            'login.forgot_password', 'login.reset_password', 'activation.activation',
+            'activation.paypal_success', 'activation.paypal_cancel'
+        ]
+        if request.endpoint in public_endpoints:
+            return
 
-        utils.init_app(app)
-        utils.load_patient_data()
+        # Si aucune des conditions ci-dessus n'est remplie, l'utilisateur doit être connecté
+        if "email" not in session or "admin_email" not in session:
+            flash("Veuillez vous connecter pour accéder à cette page.", "warning")
+            return redirect(url_for("login.login"))
 
-    # ───────────── 9. Intégration du middleware de sécurité
-    activation.init_app(app)
-
-    # ───────────── 10. Autres petites routes
+        # Vérifications de la validité du compte et de la licence
+        utils.set_dynamic_base_dir(session['admin_email'])
+        current_user = activation._user()
+        if not current_user or not current_user.get("active", True):
+            session.clear()
+            flash("Votre compte a été désactivé ou n'existe plus.", "warning")
+            return redirect(url_for("login.login"))
+        if not activation.check_activation():
+            flash("Votre licence est invalide ou a expiré. Veuillez activer le produit.", "warning")
+            return redirect(url_for("activation.activation"))
+    
     routes.register_routes(app)
-
-    # ───────────── 11. Configuration PWA hors-ligne
     with app.app_context():
-        offline_urls = []
-        for rule in app.url_map.iter_rules():
-            if "GET" in rule.methods and not ("<" in rule.rule or rule.rule.startswith("/static")):
-                try:
-                    url = url_for(rule.endpoint)
-                    offline_urls.append(url)
-                except Exception:
-                    pass
-        
-        offline_urls.extend([
-            '/offline', '/login', '/register', '/forgot_password',
-            '/reset_password', '/activation', '/paypal_success', '/paypal_cancel',
-            '/patient_rdv/', '/gestion_patient/'
-        ])
-        
-        app.config['PWA_OFFLINE_URLS'] = list(set(offline_urls))
-        # print(f"URLs hors ligne PWA définies : {app.config['PWA_OFFLINE_URLS']}") # Décommenter pour debug
-
-    # ───────────── 12. Page de secours hors-ligne
-    @app.route("/offline")
-    def offline():
-        return render_template_string("""
-<!DOCTYPE html>
-<html lang="fr">
-  {{ pwa_head()|safe }}
-<head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hors-ligne</title>
-  <style>body{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;margin:0;font-family:sans-serif;background:#f0f0f0;color:#333;}h1{font-size:2.5rem;margin-bottom:0.5rem;}p{font-size:1.1rem;}</style>
-</head>
-<body><h1>Vous êtes hors-ligne</h1><p>Vérifiez votre connexion et réessayez plus tard.</p></body>
-</html>
-"""), 200
-
-    # NOUVEAU : Création des tables de la base de données si elles n'existent pas
-    with app.app_context():
+        # NOTE : create_all() est parfait pour le développement, mais pour la production,
+        # il est recommandé d'utiliser un outil de migration comme Flask-Migrate
+        # pour gérer les changements de structure de la base de données sans perte de données.
         ia_db.create_all()
-
-    print("Application Flask démarrée et Blueprints enregistrés.")
+        
+    print("✅ Application Flask démarrée.")
     return app
 
-# ───────────── Initialisation de l'application pour Gunicorn
+# --- 4. INITIALISATION ET EXÉCUTION ---
 app = create_app()
 
-# --- NOUVEAU : Initialisation de Firebase et planification de la sauvegarde ---
-
-# 1. Initialisation du FirebaseManager
+# Configuration de Firebase pour les sauvegardes
 credentials_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'firebase_credentials.json')
 project_id = ""
 if os.path.exists(credentials_path):
     with open(credentials_path, 'r') as f:
-        creds = json.load(f)
-        project_id = creds.get('project_id')
+        project_id = json.load(f).get('project_id', '')
 
-firebase_manager = None
-if project_id:
-    firebase_manager = FirebaseManager(credentials_path, project_id)
+app.firebase_manager = FirebaseManager(credentials_path, project_id) if project_id else None
+if app.firebase_manager:
+    print("✅ Connexion à Firebase Storage réussie.")
 else:
-    print("🔥 ATTENTION: ID de projet Firebase non trouvé ou fichier de crédentials manquant. Le module Firebase est désactivé.")
+     print("🔥 ATTENTION: ID de projet Firebase non trouvé. Le module Firebase est désactivé.")
 
-# 2. Rendre le manager accessible depuis l'objet app (pour les routes)
-app.firebase_manager = firebase_manager
-
-# 3. Fonction de sauvegarde à exécuter par le planificateur
+# Tâche de sauvegarde planifiée
 def daily_backup_task():
-    """
-    Tâche qui compresse et téléverse le dossier MEDICALINK_DATA vers Firebase.
-    """
-    print(f"🚀 [BACKUP] Démarrage de la tâche de sauvegarde quotidienne à {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
-    # Le chemin vers le dossier parent de toutes les données
+    print(f"🚀 [BACKUP] Démarrage de la sauvegarde à {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
     data_root_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MEDICALINK_DATA")
-    
-    if firebase_manager and os.path.exists(data_root_path):
-        # On sauvegarde le dossier MEDICALINK_DATA en entier dans un dossier "daily_backups" sur Firebase
-        success = firebase_manager.backup_directory(data_root_path, remote_folder="daily_backups")
-        if success:
-            print("✅ [BACKUP] Tâche de sauvegarde quotidienne terminée avec succès.")
+    if app.firebase_manager and os.path.exists(data_root_path):
+        if app.firebase_manager.backup_directory(data_root_path, remote_folder="daily_backups"):
+            print("✅ [BACKUP] Sauvegarde terminée avec succès.")
         else:
-            print("🔥 [BACKUP] La tâche de sauvegarde quotidienne a échoué.")
+            print("🔥 [BACKUP] La sauvegarde a échoué.")
     else:
-        print("ℹ️ [BACKUP] Le gestionnaire Firebase n'est pas initialisé ou le dossier MEDICALINK_DATA n'existe pas. Sauvegarde annulée.")
+        print("ℹ️ [BACKUP] Sauvegarde annulée (Firebase non initialisé ou dossier de données manquant).")
 
-# 4. Planification de la tâche
 scheduler = BackgroundScheduler(daemon=True)
-# Exécute la tâche tous les jours à minuit (00:00)
-scheduler.add_job(daily_backup_task, 'cron', hour=0, minute=0)
+scheduler.add_job(daily_backup_task, 'cron', hour='0,12', minute=0)
 scheduler.start()
-print("🗓️ Tâche de sauvegarde quotidienne planifiée pour s'exécuter tous les jours à minuit.")
-# --- FIN DES AJOUTS ---
+print("🗓️ Tâche de sauvegarde quotidienne planifiée.")
 
-
-# ───────────── 13. Lancement pour le développement local
+# Lancement du serveur de développement
 if __name__ == '__main__':
-    try:
-        if os.environ.get("FLASK_ENV") != "production" and not os.environ.get("REPL_SLUG"):
-             webbrowser.open("http://127.0.0.1:3000/login")
-    except Exception as e:
-        print(f"Impossible d'ouvrir le navigateur web : {e}")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))
+    # Ouvre le navigateur uniquement lors du premier lancement
+    if os.environ.get("WERKZEUG_RUN_MAIN") is None:
+        webbrowser.open("http://127.0.0.1:3000/login")
+            
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 3000)), debug=True)

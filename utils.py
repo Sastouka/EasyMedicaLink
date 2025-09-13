@@ -336,10 +336,62 @@ patient_id_to_gender = {}
 patient_id_to_nom = {}    # Nom de famille
 patient_id_to_prenom = {} # Prénom
 
+# NOUVEAU : Mappage flexible des colonnes pour gérer différents formats Excel
+FLEXIBLE_COLUMN_MAPPING = {
+    'patient_id': ['ID', 'id', 'ID Patient', 'Patient ID', 'patient_id'],
+    'nom': ['Nom', 'nom', 'Last Name', 'Family Name'],
+    'prenom': ['Prenom', 'Prénom', 'prenom', 'First Name', 'Given Name'],
+    'patient_name': ['Nom Complet', 'Patient Name', 'patient_name', 'Nom et Prénom', 'name'],
+    'date_of_birth': ['DateNaissance', 'Date de Naissance', 'date_of_birth', 'DOB'],
+    'gender': ['Sexe', 'Genre', 'gender'],
+    'age': ['Âge', 'Age', 'age'],
+    'patient_phone': ['Téléphone', 'Phone', 'patient_phone', 'Tel'],
+    'antecedents': ['Antécédents', 'Antecedents', 'antecedents', 'Medical History']
+}
+
+def _normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalise les colonnes du DataFrame en se basant sur FLEXIBLE_COLUMN_MAPPING.
+    Gère également la division d'une colonne de nom complet si les colonnes de nom/prénom n'existent pas.
+    """
+    if df.empty:
+        return df
+
+    # Crée une correspondance insensible à la casse des colonnes actuelles
+    df_columns_lower = {col.lower().strip(): col for col in df.columns}
+    
+    rename_map = {}
+    found_internal_names = set()
+
+    for internal_name, possible_names in FLEXIBLE_COLUMN_MAPPING.items():
+        for name in possible_names:
+            if name.lower() in df_columns_lower:
+                original_col_name = df_columns_lower[name.lower()]
+                rename_map[original_col_name] = internal_name
+                found_internal_names.add(internal_name)
+                break # Passe au nom interne suivant dès qu'une correspondance est trouvée
+    
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    # Si 'nom' et 'prenom' n'ont pas été trouvés, mais 'patient_name' oui, on le divise.
+    if 'nom' not in found_internal_names and 'prenom' not in found_internal_names and 'patient_name' in found_internal_names:
+        print("DEBUG: Division de la colonne 'patient_name' en 'nom' et 'prenom'.")
+        # S'assure que la colonne existe avant de tenter la division
+        if 'patient_name' in df.columns:
+            # Utilise .get(1) avec une valeur par défaut de '' pour éviter les erreurs sur les noms sans espaces
+            name_parts = df['patient_name'].astype(str).str.split(r'\s+', n=1, expand=True)
+            df['nom'] = name_parts[0].fillna('')
+            df['prenom'] = name_parts[1].fillna('')
+
+    return df
+
+
 def load_patient_data():
     """
     Charge et fusionne les données des patients depuis 'info_Base_patient.xlsx'
     et 'ConsultationData.xlsx' dans des variables globales.
+    Utilise une approche flexible pour la reconnaissance des colonnes.
     """
     global patient_ids, patient_names
     global patient_id_to_name, patient_name_to_id
@@ -347,12 +399,11 @@ def load_patient_data():
     global patient_id_to_dob, patient_id_to_gender
     global patient_id_to_nom, patient_id_to_prenom
 
-    # S'assurer que les chemins dynamiques sont définis avant de continuer
     if EXCEL_FOLDER is None:
         print("ERREUR: Le répertoire de base dynamique n'est pas défini. Appeler set_dynamic_base_dir en premier.")
         return
 
-    # Réinitialisation des variables globales pour garantir un état propre à chaque chargement
+    # Réinitialisation des variables globales
     patient_ids.clear(); patient_names.clear()
     patient_id_to_name.clear(); patient_name_to_id.clear()
     patient_id_to_age.clear(); patient_id_to_phone.clear(); patient_id_to_antecedents.clear()
@@ -360,138 +411,90 @@ def load_patient_data():
     patient_id_to_nom.clear(); patient_id_to_prenom.clear()
     print("DEBUG: Toutes les données patient globales ont été réinitialisées.")
 
+    # Fusionner les dataframes de base et de consultation pour un traitement unifié
+    all_patient_df = pd.DataFrame()
+    
     # 1. Chargement des données de base patients (info_Base_patient.xlsx)
-    if not os.path.exists(PATIENT_BASE_FILE):
-        print(f"DEBUG: Fichier de base patient non trouvé: {PATIENT_BASE_FILE}. Les données patient ne seront pas chargées depuis ce fichier.")
-    else:
+    if os.path.exists(PATIENT_BASE_FILE):
         try:
             df_base = pd.read_excel(PATIENT_BASE_FILE, sheet_name=0, dtype=str).fillna('')
-            print(f"DEBUG: df_base (info_Base_patient.xlsx) chargé avec {len(df_base)} lignes.")
-            print(f"DEBUG: Colonnes de df_base avant renommage: {df_base.columns.tolist()}")
-
-            # Définir le mappage des colonnes attendues dans info_Base_patient.xlsx vers les noms internes
-            column_mapping = {
-                'ID': 'patient_id',
-                'Nom': 'nom', # Nom de famille
-                'Prenom': 'prenom', # Prénom
-                'DateNaissance': 'date_of_birth',
-                'Sexe': 'gender',
-                'Âge': 'age',
-                'Téléphone': 'patient_phone',
-                'Antécédents': 'antecedents'
-            }
-            
-            # Renommer les colonnes pour qu'elles correspondent aux noms internes
-            df_base_renamed = df_base.rename(columns=column_mapping)
-            print(f"DEBUG: Colonnes de df_base après renommage: {df_base_renamed.columns.tolist()}")
-            
-            # Vérification des colonnes requises APRES renommage
-            required_internal_columns = set(column_mapping.values())
-            missing_columns = required_internal_columns.difference(df_base_renamed.columns)
-            if missing_columns:
-                print(f"AVERTISSEMENT: Colonnes internes requises manquantes dans info_Base_patient.xlsx: {missing_columns}. Certaines données patient pourraient être incomplètes.")
-            
-            # Nettoyage et population des mappings globaux
-            for _, row in df_base_renamed.iterrows():
-                pid = str(row['patient_id']).strip() if 'patient_id' in row else None
-                if pid:
-                    nom = str(row.get('nom', '')).strip()
-                    prenom = str(row.get('prenom', '')).strip()
-                    full_name = f"{nom} {prenom}".strip()
-
-                    patient_id_to_name[pid] = full_name
-                    patient_id_to_nom[pid] = nom
-                    patient_id_to_prenom[pid] = prenom
-                    patient_id_to_age[pid] = str(row.get('age', '')).strip()
-                    patient_id_to_phone[pid] = str(row.get('patient_phone', '')).strip()
-                    patient_id_to_antecedents[pid] = str(row.get('antecedents', '')).strip()
-                    patient_id_to_dob[pid] = str(row.get('date_of_birth', '')).strip()
-                    patient_id_to_gender[pid] = str(row.get('gender', '')).strip()
-
-                    if pid not in patient_ids:
-                        patient_ids.append(pid)
-                    if full_name and full_name not in patient_names:
-                        patient_names.append(full_name)
-                    if full_name: # Assurez-vous que le nom complet n'est pas vide
-                        patient_name_to_id[full_name] = pid # Mappage Nom Complet -> ID
-
-            print(f"DEBUG: Données chargées depuis info_Base_patient.xlsx.")
-            print(f"DEBUG: patient_id_to_name (Nom Complet) ex: {list(patient_id_to_name.items())[:2]}")
-            print(f"DEBUG: patient_id_to_nom (Nom) ex: {list(patient_id_to_nom.items())[:2]}")
-            print(f"DEBUG: patient_id_to_prenom (Prénom) ex: {list(patient_id_to_prenom.items())[:2]}")
-
+            df_base_normalized = _normalize_dataframe_columns(df_base)
+            all_patient_df = pd.concat([all_patient_df, df_base_normalized], ignore_index=True)
+            print(f"DEBUG: Données de {PATIENT_BASE_FILE} normalisées et ajoutées.")
         except Exception as e:
-            print(f"ERREUR: Erreur de chargement ou de traitement des données patient depuis info_Base_patient.xlsx: {str(e)}")
+            print(f"ERREUR: Erreur de chargement de {PATIENT_BASE_FILE}: {e}")
 
-    # 2. Chargement et fusion des données de suivi (ConsultationData.xlsx)
+    # 2. Chargement des données de suivi (ConsultationData.xlsx)
     if os.path.exists(CONSULT_FILE_PATH):
         try:
             df_consult = pd.read_excel(CONSULT_FILE_PATH, sheet_name=0, dtype=str).fillna('')
-            print(f"DEBUG: df_consult (ConsultationData.xlsx) chargé avec {len(df_consult)} lignes.")
-            print(f"DEBUG: Colonnes de df_consult: {df_consult.columns.tolist()}")
-
-            if 'consultation_date' in df_consult.columns:
-                df_consult['consultation_date'] = pd.to_datetime(df_consult['consultation_date'].astype(str).str[:10], errors='coerce')
-                df_consult = df_consult.dropna(subset=['consultation_date'])
-                df_consult = df_consult.sort_values(by='consultation_date')
-                consult_data_latest = df_consult.groupby('patient_id').last().to_dict(orient='index')
-                print(f"DEBUG: consult_data_latest chargé avec {len(consult_data_latest)} entrées pour la fusion.")
-
-                for pid, consult_info in consult_data_latest.items():
-                    pid = str(pid).strip() # Assurez-vous que l'ID est une chaîne propre
-
-                    # Mettre à jour/ajouter les données, en donnant la priorité aux données existantes
-                    # de info_Base_patient si elles sont plus complètes.
-                    # Sinon, utiliser les données de la dernière consultation.
-
-                    # Nom et Prénom (séparés)
-                    consult_nom = str(consult_info.get('nom', '')).strip()
-                    consult_prenom = str(consult_info.get('prenom', '')).strip()
-                    
-                    patient_id_to_nom[pid] = patient_id_to_nom.get(pid) or consult_nom
-                    patient_id_to_prenom[pid] = patient_id_to_prenom.get(pid) or consult_prenom
-                    
-                    # Nom Complet (patient_name)
-                    derived_full_name_from_consult = f"{patient_id_to_nom[pid]} {patient_id_to_prenom[pid]}".strip()
-                    patient_id_to_name[pid] = patient_id_to_name.get(pid) or derived_full_name_from_consult or str(consult_info.get('patient_name', '')).strip()
-
-                    # Autres champs
-                    patient_id_to_age[pid] = patient_id_to_age.get(pid) or str(consult_info.get('age', '')).strip()
-                    patient_id_to_phone[pid] = patient_id_to_phone.get(pid) or str(consult_info.get('patient_phone', '')).strip()
-                    patient_id_to_antecedents[pid] = patient_id_to_antecedents.get(pid) or str(consult_info.get('antecedents', '')).strip()
-                    patient_id_to_dob[pid] = patient_id_to_dob.get(pid) or str(consult_info.get('date_of_birth', '')).strip()
-                    patient_id_to_gender[pid] = patient_id_to_gender.get(pid) or str(consult_info.get('gender', '')).strip()
-
-                    # Ajouter l'ID et le nom complet aux listes si ce sont de nouveaux patients
-                    if pid not in patient_ids:
-                        patient_ids.append(pid)
-                    if patient_id_to_name.get(pid) and patient_id_to_name[pid] not in patient_names:
-                        patient_names.append(patient_id_to_name[pid])
-                    if patient_id_to_name.get(pid): # Mappage Nom Complet -> ID
-                        patient_name_to_id[patient_id_to_name[pid]] = pid
-
-            else:
-                print("DEBUG: La colonne 'consultation_date' est manquante dans ConsultationData.xlsx. Impossible de trier par date.")
-
+            df_consult_normalized = _normalize_dataframe_columns(df_consult)
+            all_patient_df = pd.concat([all_patient_df, df_consult_normalized], ignore_index=True)
+            print(f"DEBUG: Données de {CONSULT_FILE_PATH} normalisées et ajoutées.")
         except Exception as e:
-            print(f"ERREUR: Erreur lors du chargement ou du traitement de ConsultationData.xlsx: {str(e)}")
-    else:
-        print(f"DEBUG: Fichier de consultation non trouvé: {CONSULT_FILE_PATH}. Les données de consultation ne seront pas fusionnées.")
+            print(f"ERREUR: Erreur de chargement de {CONSULT_FILE_PATH}: {e}")
 
-    # Finalisation des listes et mappings après toutes les fusions
+    if all_patient_df.empty or 'patient_id' not in all_patient_df.columns:
+        print("AVERTISSEMENT: Aucune donnée patient ou colonne 'patient_id' trouvée. Les listes de patients seront vides.")
+        return
+
+    # Nettoyer les IDs et supprimer les doublons, en gardant la dernière entrée pour chaque patient
+    all_patient_df['patient_id'] = all_patient_df['patient_id'].astype(str).str.strip()
+    all_patient_df = all_patient_df.dropna(subset=['patient_id'])
+    all_patient_df = all_patient_df[all_patient_df['patient_id'] != '']
+    
+    # S'il y a une date de consultation, l'utiliser pour trier et garder la plus récente.
+    if 'consultation_date' in all_patient_df.columns:
+        all_patient_df['consultation_date_obj'] = pd.to_datetime(all_patient_df['consultation_date'].astype(str).str[:10], errors='coerce')
+        all_patient_df = all_patient_df.sort_values(by='consultation_date_obj', ascending=False)
+
+    # Garder la dernière information pour chaque ID patient. drop_duplicates garde la première occurrence,
+    # et comme on a trié par date décroissante, c'est la plus récente.
+    latest_patient_data = all_patient_df.drop_duplicates(subset=['patient_id'], keep='first')
+    
+    print(f"DEBUG: Traitement de {len(latest_patient_data)} entrées patient uniques.")
+
+    # 3. Population des dictionnaires globaux depuis le DataFrame unifié et nettoyé
+    for _, row in latest_patient_data.iterrows():
+        pid = row['patient_id']
+        
+        # S'assurer que les colonnes 'nom' et 'prenom' existent
+        nom = str(row.get('nom', '')).strip()
+        prenom = str(row.get('prenom', '')).strip()
+        
+        # Construire le nom complet à partir de 'nom' et 'prenom' si possible
+        full_name_from_parts = f"{nom} {prenom}".strip()
+        
+        # Utiliser 'patient_name' comme fallback si le nom construit est vide
+        full_name = full_name_from_parts or str(row.get('patient_name', '')).strip()
+
+        # Mettre à jour les dictionnaires
+        patient_id_to_nom[pid] = nom
+        patient_id_to_prenom[pid] = prenom
+        patient_id_to_name[pid] = full_name
+        
+        # Peupler les autres champs, en utilisant get() pour éviter les KeyError
+        patient_id_to_age[pid] = str(row.get('age', '')).strip()
+        patient_id_to_phone[pid] = str(row.get('patient_phone', '')).strip()
+        patient_id_to_antecedents[pid] = str(row.get('antecedents', '')).strip()
+        patient_id_to_dob[pid] = str(row.get('date_of_birth', '')).strip()
+        patient_id_to_gender[pid] = str(row.get('gender', '')).strip()
+
+        # Remplir les listes pour les datalists du frontend
+        if pid not in patient_ids:
+            patient_ids.append(pid)
+        if full_name and full_name not in patient_names:
+            patient_names.append(full_name)
+        if full_name:
+            patient_name_to_id[full_name] = pid
+
+    # Tri final des listes
     patient_ids = sorted(list(set(patient_ids)), key=str.lower)
     patient_names = sorted(list(set(patient_names)), key=str.lower)
-    # Reconstruire patient_name_to_id pour s'assurer qu'il est cohérent avec patient_id_to_name
-    patient_name_to_id.clear()
-    for pid, name in patient_id_to_name.items():
-        if name:
-            patient_name_to_id[name] = pid
 
+    print(f"DEBUG: Chargement des données patient terminé. {len(patient_ids)} IDs et {len(patient_names)} noms chargés.")
     print(f"DEBUG: patient_ids finaux chargés: {patient_ids[:5] if patient_ids else 'Vide'}...")
     print(f"DEBUG: patient_names finaux chargés: {patient_names[:5] if patient_names else 'Vide'}...")
-    print(f"DEBUG: patient_id_to_name final (exemples): {list(patient_id_to_name.items())[:2]}")
-    print(f"DEBUG: patient_id_to_nom final (exemples): {list(patient_id_to_nom.items())[:2]}")
-    print(f"DEBUG: patient_id_to_prenom final (exemples): {list(patient_id_to_prenom.items())[:2]}")
 
 
 # ---------------------------------------------------------------------------

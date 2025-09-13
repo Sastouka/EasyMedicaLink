@@ -12,4 +12,9 @@ bfg-1.14.0.jar
 # Fichiers de configuration sensibles
 firebase_credentials.json
 
+# Fichier des secrets
+email.json
+
+google_credentials.json
+
 

@@ -577,6 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadIconOrder();
 });
 </script>
+{% include '_floating_assistant.html' %} 
 </body>
 </html>
 """

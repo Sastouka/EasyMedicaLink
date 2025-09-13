@@ -54,6 +54,7 @@ def register_routes(app):
     def index():
         print(f"DEBUG (routes.py): Accès à la route /consultation (méthode: {request.method})")
         config = _config() # Utilise les chemins définis dynamiquement
+        utils.load_patient_data() # Charger les données patient à chaque chargement de la page
         theme_names = list(theme.THEMES.keys())
         # utils.background_file est déjà mis à jour par utils.init_app lors du before_request
 
