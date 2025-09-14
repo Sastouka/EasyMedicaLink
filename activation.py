@@ -392,6 +392,7 @@ body{
   <div class='mt-4 pt-4 border-top text-center'>
     <p class='text-muted small'>Pour toute question, contactez le support technique.</p>
     <div>
+        <a href="{{ url_for('login.login') }}" class='btn btn-outline-primary btn-sm'><i class='fas fa-arrow-left me-1'></i> Retour à la connexion</a>
         <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-secondary btn-sm'><i class='fas fa-envelope me-1'></i> Email</a>
         <a href='https://wa.me/212652084735' class='btn btn-outline-success btn-sm' target='_blank'><i class='fab fa-whatsapp me-1'></i> WhatsApp</a>
     </div>
