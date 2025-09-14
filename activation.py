@@ -1,11 +1,11 @@
-# activation.py – gestion licences & activation (VERSION CORRIGÉE)
+# activation.py – gestion licences & activation (VERSION CORRIGÉE ET ADAPTÉE)
 from __future__ import annotations
 import os, json, uuid, hashlib, socket, requests, calendar
 from datetime import date, timedelta
 from typing import Optional, Dict
 from flask import (
     request, render_template_string, redirect, url_for,
-    flash, session, Blueprint
+    flash, session, Blueprint, current_app
 )
 
 # ─────────────────────────────────────────────────────────────
@@ -33,23 +33,21 @@ def generate_activation_key_for_user(
     hwid: str, plan: str, ref: Optional[date] = None
 ) -> str:
     """
-    Génère une clé d'activation avec une logique qui dépend du plan.
-    - Essai: lié à la semaine du mois.
-    - 1 mois: lié au jour exact (JJ/MM/AAAA).
-    - 1 an: lié à l'année (AAAA).
-    - Illimité: indépendant de la date.
+    Génère une clé d'activation. La logique est maintenant plus flexible
+    pour gérer les nouveaux noms de plans (ex: "web_1_mois", "local_1_an").
     """
     ref = ref or date.today()
     plan_lower = plan.lower().strip()
     date_component = ""
 
+    # --- MODIFICATION : Utilisation de 'in' pour plus de flexibilité ---
     if plan_lower.startswith("essai"):
         date_component = ref.strftime("%m%Y") + str(_week_of_month(ref))
-    elif plan_lower == "1 mois":
+    elif "1_mois" in plan_lower:
         date_component = ref.strftime("%d%m%Y")
-    elif plan_lower == "1 an":
+    elif "1_an" in plan_lower:
         date_component = ref.strftime("%Y")
-    elif plan_lower == "illimité":
+    elif "illimite" in plan_lower:
         date_component = ""
 
     payload = f"{hwid}{SECRET_SALT}{plan_lower}{date_component}"
@@ -112,17 +110,18 @@ def check_activation() -> bool:
         if activation_record.get("activation_code") != exp_code:
             return False
 
+        # --- MODIFICATION : Utilisation de 'in' pour la validation ---
         if plan.startswith("essai"):
             return today <= act_date + timedelta(days=TRIAL_DAYS)
-        if plan == "1 mois":
+        if "1_mois" in plan:
             return today <= _add_month(act_date)
-        if plan == "1 an":
+        if "1_an" in plan:
             try:
                 lim = act_date.replace(year=act_date.year + 1)
             except ValueError:
                 lim = act_date + timedelta(days=365)
             return today <= lim
-        if plan == "illimité":
+        if "illimite" in plan:
             return True
         return False
 
@@ -195,49 +194,210 @@ def capture_paypal_order(oid):
 # ─────────────────────────────────────────────────────────────
 # 7. Templates (HTML condensé)
 # ─────────────────────────────────────────────────────────────
+
+# --- MODIFICATION : Template entièrement revu pour un design moderne et responsive ---
 activation_template = """
 <!DOCTYPE html><html lang='fr'>
 {{ pwa_head()|safe }}
 <head>
 <meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Activation</title>
+<title>Activation EasyMedicalink</title>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap' rel='stylesheet'>
 <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'>
 <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'>
 <style>
-body{background:#f8f9fa; display: flex; align-items: center; justify-content: center; min-height: 100vh;}
-.card{border-radius:1rem;box-shadow:0 4px 20px rgba(0,0,0,.1); width: 100%; max-width: 500px;}
-.btn-primary{background:linear-gradient(45deg,#0069d9,#6610f2);border:none}
-.contact-info {margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; text-align: center;}
-.contact-info a {margin: 0 10px;}
+:root {
+    --gradient-start: #667eea;
+    --gradient-end: #764ba2;
+    --web-start: #007bff;
+    --web-end: #00d4ff;
+    --local-start: #28a745;
+    --local-end: #20c997;
+    --popular-bg: #ffc107;
+}
+body{
+    background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
+    font-family: 'Poppins', sans-serif;
+    color: #495057;
+}
+.container{max-width:960px; padding-top:2rem; padding-bottom: 2rem;}
+.main-card{
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+.plan-card {
+    border-radius: 15px;
+    transition: all .3s ease;
+    border: none;
+    box-shadow: 0 4px 15px rgba(0,0,0,.1);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+}
+.plan-card:hover{
+    transform: translateY(-10px);
+    box-shadow: 0 10px 25px rgba(0,0,0,.15);
+}
+.plan-card .card-header{
+    border-top-left-radius: 15px;
+    border-top-right-radius: 15px;
+    font-weight: 700;
+    color: white;
+    padding: 1.25rem 1rem;
+}
+.header-web { background: linear-gradient(45deg, var(--web-start), var(--web-end)); }
+.header-local { background: linear-gradient(45deg, var(--local-start), var(--local-end)); }
+.btn-plan {
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    border-radius: 50px;
+    border: none;
+    transition: all .3s ease;
+    color: white;
+}
+.btn-web { background-image: linear-gradient(to right, var(--web-start) 0%, var(--web-end) 51%, var(--web-start) 100%); background-size: 200% auto; }
+.btn-local { background-image: linear-gradient(to right, var(--local-start) 0%, var(--local-end) 51%, var(--local-start) 100%); background-size: 200% auto; }
+.btn-plan:hover { background-position: right center; }
+.badge-popular {
+    position: absolute;
+    top: 18px;
+    right: -30px;
+    transform: rotate(45deg);
+    background-color: var(--popular-bg);
+    color: #212529;
+    font-weight: bold;
+    padding: 2px 30px;
+    font-size: 0.8rem;
+}
+.mono {font-family: 'Courier New', Courier, monospace; background-color: #e9ecef; padding: .2em .4em; border-radius: .3em;}
+.list-unstyled .fa-stack { font-size: 0.9em; } /* <-- AJOUT POUR RÉDUIRE LA TAILLE DES NUMÉROS */
+.activation-steps .step-number {
+    background-image: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
+}
 </style>
 </head><body><div class='container'>
-<div class='row justify-content-center'><div class='col-md-6'>
-<div class='card p-4'><h3 class='card-title text-center mb-3'><i class='fas fa-key'></i> Activation</h3>
-<p class='small text-center'>Mois/année : <b>{{ month_year }}</b> • Semaine #<b>{{ week_rank }}</b></p>
-<form method='POST'><input type='hidden' name='choix' id='planField'>
-<div class='mb-3'><label class='form-label'><i class='fas fa-desktop'></i> ID machine :</label>
-<input class='form-control' readonly value='{{ machine_id }}'></div>
-<div class='mb-3'><label class='form-label'><i class='fas fa-code'></i> Clé (optionnelle)</label>
-<input name='activation_code' class='form-control' placeholder='XXXX-XXXX-XXXX-XXXX'></div>
-<div class='d-grid gap-2 mb-3'>
-<button type='submit' class='btn btn-primary' onclick="setPlan('1 mois')">
-  <i class='fas fa-calendar-day'></i> 1 mois (25 $)
-</button>
-<button type='submit' class='btn btn-info' onclick="setPlan('1 an')">
-  <i class='fas fa-calendar-alt'></i> 1 an (50 $)
-</button>
-<button type='submit' class='btn btn-warning' onclick="setPlan('illimité')">
-  <i class='fas fa-infinity'></i> Illimité (120 $)
-</button>
-{% with m = get_flashed_messages(with_categories=true) %}
-  {% for c,msg in m %}<div class='alert alert-{{c}}'>{{msg}}</div>{% endfor %}{% endwith %}
-</form>
-<div class='contact-info'>
-    <p>Pour toute question concernant l'activation, le paiement ou le support technique, contactez-nous. Vous pouvez nous joindre par email à sastoukadigital@gmail.com pour des requêtes détaillées, ou via WhatsApp au +212652084735 pour une assistance rapide et directe.</p>
-    <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-info'><i class='fas fa-envelope'></i> Email</a>
-    <a href='https://wa.me/212652084735' class='btn btn-outline-success' target='_blank'><i class='fab fa-whatsapp'></i> WhatsApp</a>
-</div>
-</div></div></div></div>
+<div class='main-card p-4 p-md-5'>
+  <div class='text-center mb-5'>
+    <h1 class='card-title fw-bold' style="color: var(--gradient-start);"><i class='fas fa-rocket'></i> Activez Votre Licence</h1>
+    <p class='fs-5 text-muted'>Rejoignez-nous et simplifiez votre gestion dès aujourd'hui.</p>
+  </div>
+  
+  {% with m = get_flashed_messages(with_categories=true) %}
+    {% for c,msg in m %}<div class='alert alert-{{c}}'>{{msg}}</div>{% endfor %}
+  {% endwith %}
+
+  <form method='POST'>
+    <div class='mb-4 p-3 bg-light rounded border text-center'>
+      <label class='form-label fw-bold'><i class='fas fa-desktop'></i> Votre ID Machine Unique</label>
+      <div class='fs-5 mono'>{{ machine_id }}</div>
+    </div>
+    
+    <div class="mb-4 text-center">
+        <label for="activation_code" class='form-label fw-bold'>Déjà une clé d'activation ?</label>
+        <input name='activation_code' id='activation_code' class='form-control form-control-lg mono text-center mx-auto' style="max-width:350px;" placeholder='XXXX-XXXX-XXXX-XXXX'>
+        <div class="form-text mt-2">Entrez votre clé et cliquez sur le bouton du plan correspondant pour activer.</div>
+    </div>
+
+    <hr class="my-4">
+
+    <input type='hidden' name='choix' id='planField'>
+    <div class='row g-4'>
+      <div class='col-lg-6 mb-4 mb-lg-0'>
+        <div class='plan-card h-100'>
+          <div class='card-header text-center fs-4 header-web'><i class="fas fa-globe me-2"></i>Version Web</div>
+          <div class='card-body d-flex flex-column p-4'>
+            <p class='text-center'>Accès universel depuis n'importe quel navigateur. Idéal pour la mobilité.</p>
+            <div class='text-center my-3'>
+                <span class="fs-1 fw-bold">$15</span>
+                <span class="text-muted">/ mois</span>
+            </div>
+            <button type='submit' class='btn btn-plan btn-web' onclick="setPlan('web_1_mois')">Choisir ce plan</button>
+            <hr>
+             <div class='text-center my-3'>
+                <span class="fs-1 fw-bold">$100</span>
+                <span class="text-muted">/ an</span>
+            </div>
+            <button type='submit' class='btn btn-plan btn-web' onclick="setPlan('web_1_an')">Abonnement Annuel</button>
+            <div class="badge-popular">Économie</div>
+          </div>
+        </div>
+      </div>
+
+      <div class='col-lg-6'>
+        <div class='plan-card h-100'>
+          <div class='card-header text-center fs-4 header-local'><i class="fab fa-windows me-2"></i>Version Locale</div>
+          <div class='card-body d-flex flex-column p-4'>
+            <p class='text-center'>Performance maximale sur votre PC Windows, même hors ligne.</p>
+            <div class='text-center my-3'>
+                <span class="fs-1 fw-bold">$50</span>
+                <span class="text-muted">/ an</span>
+            </div>
+            <button type='submit' class='btn btn-plan btn-local' onclick="setPlan('local_1_an')">Licence 1 An</button>
+            <hr>
+            <div class='text-center my-3'>
+                <span class="fs-1 fw-bold">$120</span>
+                <span class="text-muted">/ à vie</span>
+            </div>
+            <button type='submit' class='btn btn-plan btn-local' onclick="setPlan('local_illimite')">Licence Illimitée</button>
+            <div class="badge-popular">-    Meilleur Choix</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+  
+  <hr class="my-5">
+
+  <div class="px-lg-5">
+    <h2 class='text-center fw-bold mb-4' style="color: var(--gradient-start);"><i class="fas fa-question-circle"></i> Comment ça marche ?</h2>
+    <div class="row g-4">
+      <div class="col-md-6">
+          <h4 class="text-center mb-3 header-web text-white p-2 rounded-pill"><i class="fas fa-globe me-2"></i>Pour la Version Web</h4>
+          <ul class="list-unstyled">
+              <li class="d-flex align-items-center mb-3"><span class="fa-stack fa-lg me-3"><i class="fas fa-circle fa-stack-2x" style="color:var(--web-start);"></i><strong class="fa-stack-1x fa-inverse">1</strong></span> <p class="mb-0">Choisissez votre plan (1 Mois ou 1 An) et cliquez sur le bouton correspondant pour payer via PayPal.</p></li>
+              <li class="d-flex align-items-center mb-3"><span class="fa-stack fa-lg me-3"><i class="fas fa-circle fa-stack-2x" style="color:var(--web-start);"></i><strong class="fa-stack-1x fa-inverse">2</strong></span> <p class="mb-0">Une fois le paiement effectué, votre licence est <strong>instantanément activée</strong>.</p></li>
+              <li class="d-flex align-items-center"><span class="fa-stack fa-lg me-3"><i class="fas fa-circle fa-stack-2x" style="color:var(--web-start);"></i><strong class="fa-stack-1x fa-inverse">3</strong></span> <p class="mb-0">Vous pouvez vous connecter et utiliser l'application depuis <strong>n'importe quel navigateur</strong> (PC, Mac, tablette...).</p></li>
+          </ul>
+      </div>
+      <div class="col-md-6">
+           <h4 class="text-center mb-3 header-local text-white p-2 rounded-pill"><i class="fab fa-windows me-2"></i>Pour la Version Locale</h4>
+           <ul class="list-unstyled">
+              <li class="d-flex align-items-center mb-3"><span class="fa-stack fa-lg me-3"><i class="fas fa-circle fa-stack-2x" style="color:var(--local-start);"></i><strong class="fa-stack-1x fa-inverse">1</strong></span> <p class="mb-0"><strong>Téléchargez l'exécutable</strong> (64-bit ou 32-bit) depuis les liens ci-dessous et installez-le.</p></li>
+              <li class="d-flex align-items-center mb-3"><span class="fa-stack fa-lg me-3"><i class="fas fa-circle fa-stack-2x" style="color:var(--local-start);"></i><strong class="fa-stack-1x fa-inverse">2</strong></span> <p class="mb-0">Lancez l'application. Elle vous amènera sur cette page pour activer votre licence <strong>liée à cet ordinateur</strong>.</p></li>
+              <li class="d-flex align-items-center"><span class="fa-stack fa-lg me-3"><i class="fas fa-circle fa-stack-2x" style="color:var(--local-start);"></i><strong class="fa-stack-1x fa-inverse">3</strong></span> <p class="mb-0">Choisissez votre licence (1 An ou Illimitée), payez, et l'application sera <strong>débloquée sur votre PC</strong>.</p></li>
+          </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="text-center mt-5 p-4 rounded-3" style="background-color: #e3f2fd;">
+      <h3 class="fw-bold mb-3" style="color: var(--local-start);"><i class="fab fa-windows"></i> Téléchargement Version Locale</h3>
+      <p class="mb-4 text-muted">Pour une expérience optimale sur votre ordinateur, téléchargez la version compatible avec votre système.</p>
+      <div class="d-grid gap-3 d-sm-flex justify-content-sm-center">
+          {% if win64_filename %}
+            <a href="{{ url_for('static', filename=win64_filename) }}" class='btn btn-lg btn-success'><i class='fas fa-download me-2'></i> Windows 64-bit</a>
+          {% endif %}
+          {% if win32_filename %}
+            <a href="{{ url_for('static', filename=win32_filename) }}" class='btn btn-lg btn-secondary'><i class='fas fa-download me-2'></i> Windows 32-bit</a>
+          {% endif %}
+      </div>
+  </div>
+
+  <div class='mt-4 pt-4 border-top text-center'>
+    <p class='text-muted small'>Pour toute question, contactez le support technique.</p>
+    <div>
+        <a href='mailto:sastoukadigital@gmail.com' class='btn btn-outline-secondary btn-sm'><i class='fas fa-envelope me-1'></i> Email</a>
+        <a href='https://wa.me/212652084735' class='btn btn-outline-success btn-sm' target='_blank'><i class='fab fa-whatsapp me-1'></i> WhatsApp</a>
+    </div>
+  </div>
+
+</div></div>
 <script>
 function setPlan(p){document.getElementById('planField').value=p;}
 </script>
@@ -268,22 +428,38 @@ def activation():
         return redirect(url_for("accueil.accueil"))
 
     hwid, today = get_hardware_id(), date.today()
+    
+    # --- AJOUT : Recherche des fichiers exécutables ---
+    static_folder = current_app.static_folder
+    contents = os.listdir(static_folder) if os.path.exists(static_folder) else []
+    win64 = next((f for f in contents if f.startswith('EasyMedicaLink-Win64.exe')), None)
+    win32 = next((f for f in contents if f.startswith('EasyMedicaLink-Win32.exe')), None)
+
     ctx = dict(machine_id=hwid,
                week_rank=_week_of_month(today),
                month_year=today.strftime("%m/%Y"),
-               TRIAL_DAYS=TRIAL_DAYS)
+               TRIAL_DAYS=TRIAL_DAYS,
+               win64_filename=win64,
+               win32_filename=win32)
 
     if request.method == "POST":
         plan = request.form["choix"]
         code = request.form.get("activation_code","").strip().upper()
         
-        tariffs = {"1 mois":"25.00","1 an":"50.00","illimité":"120.00"}
+        # --- MODIFICATION : Nouveaux tarifs ---
+        tariffs = {
+            "web_1_mois": "15.00",
+            "web_1_an": "100.00",
+            "local_1_an": "50.00",
+            "local_illimite": "120.00",
+        }
+
         if plan in tariffs:
             # Vérification de la clé manuelle (si fournie)
             expected_paid_code = generate_activation_key_for_user(hwid, plan, today)
             if code and code == expected_paid_code:
                 update_activation(plan, code)
-                flash("Plan activé par clé !","success")
+                flash("Plan activé avec succès par clé !","success")
                 return redirect(url_for("accueil.accueil"))
 
             # Sinon, on lance le paiement PayPal
@@ -296,9 +472,9 @@ def activation():
                 orders[oid] = (plan, expected_paid_code)
                 return redirect(url)
             except Exception as e:
-                flash(f"Erreur PayPal : {e}","danger")
+                flash(f"Erreur de communication avec PayPal : {e}","danger")
         else:
-            flash("Plan de paiement invalide sélectionné.", "danger")
+            flash("Veuillez sélectionner un plan valide.", "danger")
 
     return render_template_string(activation_template, **ctx)
 
@@ -309,12 +485,12 @@ def paypal_success():
     if oid and oid in orders and capture_paypal_order(oid):
         plan, code = orders.pop(oid)
         update_activation(plan, code)
-        flash("Paiement validé – licence activée !","success")
+        flash("Paiement validé – votre licence est maintenant activée !","success")
         return redirect(url_for("accueil.accueil"))
     return render_template_string(failed_activation_template)
 
 @activation_bp.route("/paypal_cancel")
 def paypal_cancel():
     login._set_login_paths()
-    flash("Paiement annulé.","warning")
+    flash("Le paiement a été annulé. Vous pouvez réessayer.","warning")
     return redirect(url_for("activation.activation"))

@@ -1,4 +1,4 @@
-# developpeur.py – Espace Développeur (VERSION CORRIGÉE)
+# developpeur.py – Espace Développeur (VERSION CORRIGÉE ET MISE À JOUR)
 from datetime import date
 from pathlib import Path
 import json
@@ -10,24 +10,31 @@ from flask import (
     redirect, url_for, flash, session, jsonify, send_file, current_app
 )
 from typing import Optional
+import qrcode
+import io
+import base64
 
 import login as login_mod
 import activation
 import utils
-from activation import get_hardware_id
+from activation import get_hardware_id, create_paypal_order, capture_paypal_order
+from ia_assitant import db as ia_db # Ajout pour corriger le verrouillage de la DB
 
 # ───────── 1. Paramètres ─────────
 _DEV_MAIL = "sastoukadigital@gmail.com"
 _DEV_HASH = login_mod.hash_password("Sastouka_1989")
 TRIAL_DAYS = activation.TRIAL_DAYS
+
 PLANS = [
     (f"essai_{TRIAL_DAYS}jours", f"Essai {TRIAL_DAYS} jours"),
-    ("1 mois",   "1 mois"),
-    ("1 an",     "1 an"),
-    ("illimité", "Illimité")
+    ("web_1_mois", "Web - 1 Mois (15$)"),
+    ("web_1_an", "Web - 1 An (100$)"),
+    ("local_1_an", "Local Windows - 1 An (50$)"),
+    ("local_illimite", "Local Windows - Illimité (120$)")
 ]
 
 KEY_DB: Optional[Path] = None
+payment_orders = {}  # Pour suivre les paiements personnalisés
 
 def _set_dev_paths():
     global KEY_DB
@@ -55,15 +62,8 @@ def _save_keys(d: dict):
 developpeur_bp = Blueprint("developpeur_bp", __name__, url_prefix="/developpeur")
 
 # ───────── 3. Helpers ─────────
-
-# --- MODIFICATION ---
-# La fonction de vérification est maintenant vide pour autoriser l'accès public.
 def _dev_only():
-    """
-    Anciennement, cette fonction vérifiait la session du développeur.
-    Elle est maintenant désactivée pour rendre l'espace développeur public.
-    """
-    pass # Ne fait plus aucune vérification.
+    pass
 
 def _store_key(mid, plan, key, nom, prenom):
     d = _load_keys()
@@ -96,8 +96,6 @@ def _unzip_directory(zip_file_path, dest_dir):
 # ───────── 4. Routes ─────────
 @developpeur_bp.route("/login", methods=["GET", "POST"])
 def login_page():
-    # La page de login est conservée pour pouvoir "activer" le mode développeur si besoin,
-    # mais l'accès au dashboard n'est plus conditionné par cette connexion.
     if request.method == "POST":
         if request.form["email"].lower() == _DEV_MAIL and login_mod.hash_password(request.form["password"]) == _DEV_HASH:
             session["is_developpeur"] = True
@@ -114,7 +112,7 @@ def dev_logout():
 
 @developpeur_bp.route("/")
 def dashboard():
-    if (r := _dev_only()): return r # Ne fera plus rien, mais on garde la ligne par cohérence
+    if (r := _dev_only()): return r
     admins = {}
     all_users = login_mod.load_users()
     for e, u in all_users.items():
@@ -122,16 +120,76 @@ def dashboard():
             u['clinic_creation_date'] = u.get('clinic_creation_date', u.get('creation_date', 'N/A'))
             u['account_creation_date'] = u.get('account_creation_date', u.get('creation_date', 'N/A'))
             admins[e] = u
+            
+    payment_link = session.pop("payment_link", None)
+    qr_code_base64 = session.pop("qr_code_base64", None)
+    payment_amount = session.pop("payment_amount", None)
+    payment_description = session.pop("payment_description", None)
+
     return render_template_string(
         DASH_HTML,
         admins=admins,
         machines=_load_keys(),
         key=session.pop("generated_key", None),
         plans=PLANS,
-        today_date=date.today().isoformat()
+        today_date=date.today().isoformat(),
+        payment_link=payment_link,
+        qr_code_base64=qr_code_base64,
+        payment_amount=payment_amount,
+        payment_description=payment_description
     )
 
-# (Le reste des routes de developpeur.py reste inchangé)
+@developpeur_bp.route("/generer_paiement", methods=["POST"])
+def generer_paiement():
+    if (r := _dev_only()): return r
+    try:
+        amount = request.form.get("amount")
+        description = request.form.get("description", "Paiement personnalisé")
+        if not amount or float(amount) <= 0:
+            flash("Veuillez entrer un montant valide.", "danger")
+            return redirect(url_for(".dashboard"))
+
+        return_url = url_for("developpeur_bp.paiement_succes", _external=True)
+        cancel_url = url_for("developpeur_bp.paiement_annule", _external=True)
+        
+        oid, payment_link = create_paypal_order(amount, return_url, cancel_url)
+        payment_orders[oid] = {"amount": amount, "description": description}
+        
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(payment_link)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        qr_code_base64 = base64.b64encode(buffered.getvalue()).decode()
+        
+        session["payment_link"] = payment_link
+        session["qr_code_base64"] = qr_code_base64
+        session["payment_amount"] = amount
+        session["payment_description"] = description
+        
+        flash("Lien de paiement généré avec succès !", "success")
+    except Exception as e:
+        flash(f"Erreur lors de la génération du lien : {e}", "danger")
+    return redirect(url_for(".dashboard"))
+
+@developpeur_bp.route("/paiement_succes")
+def paiement_succes():
+    oid = request.args.get("token")
+    if oid and oid in payment_orders and capture_paypal_order(oid):
+        details = payment_orders.pop(oid)
+        return render_template_string(PAYMENT_SUCCESS_HTML, details=details)
+    return render_template_string(PAYMENT_FAIL_HTML)
+
+@developpeur_bp.route("/paiement_annule")
+def paiement_annule():
+    oid = request.args.get("token")
+    if oid in payment_orders:
+        payment_orders.pop(oid)
+    return render_template_string(PAYMENT_CANCEL_HTML)
+
+
 @developpeur_bp.route("/generate", methods=["POST"])
 def gen_custom():
     if (r := _dev_only()): return r
@@ -312,6 +370,24 @@ def restore_from_backup_dev():
     
     flash(f"Lancement de la restauration pour la machine '{machine_id_to_restore}'...", "info")
     
+    # --- SOLUTION FINALE : FERMETURE COMPLÈTE ---
+    try:
+        # 1. On arrête le planificateur de tâches en arrière-plan
+        print("ℹ️ Arrêt du planificateur de tâches...")
+        if current_app.scheduler.running:
+            current_app.scheduler.shutdown()
+        
+        # 2. On ferme la session de la base de données
+        print("ℹ️ Fermeture de la session de la base de données...")
+        ia_db.session.remove()
+        
+        # 3. On ferme les connexions du moteur de la base de données
+        print("ℹ️ Fermeture des connexions du moteur...")
+        ia_db.engine.dispose()
+        
+    except Exception as e:
+        print(f"🔥 Avertissement lors de l'arrêt des services : {e}")
+    
     success = firebase_manager.restore_latest_backup(
         local_data_path, 
         remote_folder="client_backups",
@@ -325,7 +401,6 @@ def restore_from_backup_dev():
         
     return redirect(url_for('developpeur_bp.dashboard'))
 
-# --- Routes pour le Gestionnaire de Fichiers Firebase ---
 @developpeur_bp.route('/firebase-browser')
 def firebase_browser():
     if (r := _dev_only()): return r
@@ -337,7 +412,6 @@ def firebase_browser():
     current_path = request.args.get('path', '')
     files, folders = firebase_manager.list_files(prefix=current_path)
 
-    # --- NOUVEAU : Générer les URLs de téléchargement ---
     for f in files:
         f.download_url = firebase_manager.get_download_url(f.name)
 
@@ -357,7 +431,6 @@ def firebase_browser():
         current_path=current_path,
         path_parts=path_parts
     )
-
 @developpeur_bp.route('/firebase-delete-blob', methods=['POST'])
 def firebase_delete_blob():
     if (r := _dev_only()): return r
@@ -396,7 +469,6 @@ def firebase_delete_folder():
 
     return redirect(url_for('.firebase_browser', path=parent_path))
 
-# --- NOUVEAU : Route pour le téléversement de fichiers ---
 @developpeur_bp.route('/firebase-upload-blob', methods=['POST'])
 def firebase_upload_blob():
     if (r := _dev_only()): return r
@@ -420,49 +492,46 @@ def firebase_upload_blob():
 # ───────── 5. Templates (HTML condensé) ─────────
 LOGIN_HTML = """
 <!doctype html><html lang='fr'>
-{{ pwa_head()|safe }}
 <head><meta charset='utf-8'><title>Développeur | Connexion</title><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'><link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css' rel='stylesheet'><style>:root{--grad1:#4b6cb7;--grad2:#182848;}body{background:linear-gradient(90deg,var(--grad1),var(--grad2));display:flex;align-items:center;justify-content:center;min-height:100vh;}.card{border-radius:1rem;overflow:hidden;}.card-header{background:linear-gradient(45deg,var(--grad1),var(--grad2));color:#fff;font-weight:600;text-align:center;padding:1.5rem 0;border-bottom:none;}.form-control:focus{border-color:var(--grad1);box-shadow:0 0 0 .25rem rgba(75,108,183,.25);}.btn-grad{background:linear-gradient(90deg,var(--grad1),var(--grad2));border:none;color:#fff;padding:.75rem 1.5rem;border-radius:.5rem;transition:all .3s ease;}.btn-grad:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,.2);}.alert{border-radius:.5rem;}</style></head>
 <body><div class='container'><div class='row justify-content-center'><div class='col-md-6 col-lg-5'><div class='card shadow-lg'><h3 class='card-header'><i class='fas fa-code me-2'></i>Mode Développeur</h3><div class='card-body p-4'>{% with m=get_flashed_messages(with_categories=true) %}{% if m %}{% for c,msg in m %}<div class='alert alert-{{c}} alert-dismissible fade show shadow-sm' role='alert'><i class='fas fa-info-circle me-2'></i>{{msg}}<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>{% endfor %}{% endif %}{% endwith %}<form method='POST'><div class='mb-3'><label for='emailInput' class='form-label fw-semibold'>Email</label><div class='input-group'><span class='input-group-text'><i class='fas fa-envelope'></i></span><input type='email' class='form-control' id='emailInput' name='email' required></div></div><div class='mb-4'><label for='passwordInput' class='form-label fw-semibold'>Mot de passe</label><div class='input-group'><span class='input-group-text'><i class='fas fa-lock'></i></span><input type='password' class='form-control' id='passwordInput' name='password' required></div></div><div class='d-grid'><button type='submit' class='btn btn-grad'><i class='fas fa-sign-in-alt me-2'></i>Se connecter</button></div></form></div></div></div></div></div><script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script></body></html>
 """
 
 DASH_HTML = """
 <!doctype html><html lang='fr'>
-{{ pwa_head()|safe }}
 <head><meta charset='utf-8'><title>Développeur | Dashboard</title><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'><link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css' rel='stylesheet'><link href='https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css' rel='stylesheet'><script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script><style>:root{--grad1:#4b6cb7;--grad2:#182848;}body{background:#f5f7fb;}.navbar{background:linear-gradient(90deg,var(--grad1),var(--grad2));}.card-header{background:linear-gradient(45deg,var(--grad1),var(--grad2));color:#fff;font-weight:600;}.section-icon{margin-right:.45rem;}.table thead{background:#e9ecef}.btn-grad{background:linear-gradient(90deg,var(--grad1),var(--grad2));border:none;color:#fff;}.no-pointer-events {pointer-events: none;}.mono{font-family: monospace; font-size: 0.9em; color: #E83E8C;}</style></head>
 <body>
 <nav class='navbar navbar-dark shadow'><div class='container-fluid'><span class='navbar-brand d-flex align-items-center gap-2'><i class='fas fa-code'></i> Mode Développeur <span class='fw-light'>EASYMEDICALINK</span></span><a href='{{ url_for("developpeur_bp.dev_logout") }}' class='btn btn-sm btn-outline-light rounded-pill'><i class='fas fa-sign-out-alt'></i> Quitter</a></div></nav>
 <div class='container my-4'>
   {% with m=get_flashed_messages(with_categories=true) %}{% if m %}{% for c,msg in m %}<div class='alert alert-{{c}} alert-dismissible fade show shadow-sm' role='alert'><i class='fas fa-info-circle me-2'></i>{{msg}}<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>{% endfor %}{% endif %}{% endwith %}
+  
   <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fas fa-key section-icon'></i>Générer une clé machine</h5><div class='card-body'><form class='row gy-2 gx-3 align-items-end' method='POST' action='{{ url_for("developpeur_bp.gen_custom") }}'><div class='col-12 col-md-3'><label class='form-label fw-semibold'><i class='fas fa-desktop me-1'></i>ID machine</label><input name='machine_id' class='form-control' placeholder='16 caractères' required></div><div class='col-12 col-md-2'><label class='form-label fw-semibold'><i class='fas fa-user me-1'></i>Nom</label><input name='nom' class='form-control' required></div><div class='col-12 col-md-2'><label class='form-label fw-semibold'><i class='fas fa-user me-1'></i>Prénom</label><input name='prenom' class='form-control' required></div><div class='col-12 col-md-3'><label class='form-label fw-semibold'><i class='fas fa-calendar-alt me-1'></i>Date d'activation</label><input name='activation_date' type='date' class='form-control' value='{{ today_date }}' required></div><div class='col-12 col-md-2'><label class='form-label fw-semibold'><i class='fas fa-file-signature me-1'></i>Plan</label><select name='plan' class='form-select'>{% for c,l in plans %}<option value='{{c}}'>{{l}}</option>{% endfor %}</select></div><div class='col-12 d-grid mt-3'><button class='btn btn-grad'><i class='fas fa-magic me-1'></i>Générer la Clé</button></div>{% if key %}<div class='col-12'><div class='alert alert-info mt-3 shadow-sm'><i class='fas fa-check-circle me-2'></i><strong>Clé&nbsp;:</strong> {{key}}</div></div>{% endif %}</form></div></div>
   <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fas fa-server section-icon'></i>Clés machines</h5><div class='card-body'><div class="table-responsive"><table id='tblKeys' class='table table-striped table-hover rounded overflow-hidden'><thead><tr><th>ID</th><th>Propriétaire</th><th>Plan</th><th>Clé</th></tr></thead><tbody>{% for mid,info in machines.items() %}<tr><td class='fw-semibold'>{{mid}}</td><td>{{info.prenom}}&nbsp;{{info.nom}}</td><td>{{info.plan}}</td><td class='text-break'>{{info.key}}</td></tr>{% endfor %}</tbody></table></div></div></div>
   <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fas fa-user-plus section-icon'></i>Créer un compte admin</h5><div class='card-body'><form class='row gy-2 gx-3 align-items-end' method='POST' action='{{ url_for("developpeur_bp.create_admin") }}'><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-envelope me-1'></i>Email</label><input name='email' type='email' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-key me-1'></i>Mot de passe</label><input name='password' type='password' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-key me-1'></i>Confirmer</label><input name='confirm' type='password' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-hospital me-1'></i>Clinique</label><input name='clinic' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-calendar-alt me-1'></i>Date création (Clinique)</label><input name='clinic_creation_date' type='date' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-map-marker-alt me-1'></i>Adresse</label><input name='address' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-phone me-1'></i>Téléphone</label><input name='phone' type='tel' class='form-control' placeholder='Numéro de téléphone' required></div><input type='hidden' name='role' value='admin'><div class='col-12 d-grid mt-2'><button class='btn btn-grad'><i class='fas fa-user-plus me-1'></i>Créer</button></div></form></div></div>
-  <div class='card shadow-sm'><h5 class='card-header'><i class='fas fa-users section-icon'></i>Comptes admin</h5><div class='card-body'><div class="table-responsive"><table id='tblAdmin' class='table table-striped table-hover rounded overflow-hidden'><thead><tr><th>Email</th><th>Clinique</th><th>Téléphone</th><th>Adresse</th><th>Date création (Clinique)</th><th>Date création (Compte)</th><th>Plan</th><th>ID Machine</th><th>Actif</th><th>Actions</th></tr></thead><tbody>
+  <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fas fa-users section-icon'></i>Comptes admin</h5><div class='card-body'><div class="table-responsive"><table id='tblAdmin' class='table table-striped table-hover rounded overflow-hidden'><thead><tr><th>Email</th><th>Clinique</th><th>Téléphone</th><th>Adresse</th><th>Date création (Clinique)</th><th>Date création (Compte)</th><th>Plan</th><th>ID Machine</th><th>Actif</th><th>Actions</th></tr></thead><tbody>
             {% for e,u in admins.items() %}<tr><td>{{e}}</td><td>{{u.clinic}}</td><td>{{u.phone}}</td><td>{{u.address}}</td><td>{{u.clinic_creation_date}}</td><td>{{u.account_creation_date}}</td><td><span class="badge bg-primary">{{ u.get("activation", {}).get("plan", "N/A") }}</span></td><td class="mono">{{ u.get("machine_id", "N/A") }}</td><td><span class='badge {{'bg-success' if u.active else 'bg-secondary'}}'>{{'Oui' if u.active else 'Non'}}</span></td><td class='text-nowrap'>{% if u.phone %}<a class='btn btn-sm btn-success me-1' title='Contacter via WhatsApp' href='https://wa.me/{{ u.phone | replace("+", "") }}' target='_blank'><i class='fab fa-whatsapp'></i></a>{% endif %}<button class='btn btn-sm btn-info me-1 edit-admin-btn' title='Modifier' data-bs-toggle='modal' data-bs-target='#editAdminModal' data-email='{{ e }}' data-clinic='{{ u.clinic }}' data-clinic_creation_date='{{ u.clinic_creation_date }}' data-address='{{ u.address }}' data-phone='{{ u.phone }}' data-active='{{ u.get('active', False) | tojson }}'><i class='fas fa-pen'></i></button><button class='btn btn-sm btn-warning me-1 change-plan-btn' title='Modifier Plan' data-bs-toggle='modal' data-bs-target='#changePlanModal' data-email='{{ e }}' data-plan='{{ u.get("activation", {}).get("plan", "") }}' data-machine_id='{{ u.get("machine_id", "") }}'><i class='fas fa-file-invoice-dollar'></i></button><a class='btn btn-sm btn-outline-secondary' title='Activer/Désactiver' href='{{ url_for('developpeur_bp.toggle_active',admin_email=e) }}'><i class='fas fa-power-off'></i></a><a class='btn btn-sm btn-outline-danger' title='Supprimer' href='{{ url_for('developpeur_bp.delete_admin',admin_email=e) }}'><i class='fas fa-trash'></i></a></td></tr>{% endfor %}
           </tbody></table></div></div></div>
-  <div class='card shadow-sm mt-4'><h5 class='card-header'><i class='fas fa-database section-icon'></i>Gestion des Données et Sauvegardes</h5><div class='card-body'><div class="d-flex justify-content-center gap-3 flex-wrap">
-        <a href="{{ url_for('developpeur_bp.export_medicalink_data') }}" class="btn btn-success"><i class="fas fa-file-archive me-2"></i>Exporter Données Locales</a>
-        <form action="{{ url_for('developpeur_bp.trigger_backup_dev') }}" method="POST" onsubmit="return confirm('Ceci va sauvegarder les données de CETTE machine (serveur) dans un dossier cloud portant son propre ID. Continuer ?');">
-          <button type="submit" class="btn btn-warning"><i class="fas fa-cloud-upload-alt me-2"></i>Forcer Sauvegarde (Cette Machine)</button>
-        </form>
-        <a href="{{ url_for('developpeur_bp.firebase_browser') }}" class="btn btn-primary">
-          <i class="fab fa-google me-2"></i>Gérer Espace Cloud
-        </a>
-  </div></div></div>
-  <div class='card shadow-sm mt-4'><h5 class='card-header'><i class='fas fa-cloud-download-alt section-icon'></i>Restauration des Données Cloud</h5><div class='card-body text-center'>
-      <p class='text-muted'>Pour restaurer, entrez l'ID machine du client. Ceci remplacera **toutes** les données locales par la dernière sauvegarde trouvée pour cet ID dans le dossier <strong>client_backups</strong>. À utiliser avec une extrême prudence.</p>
-      <form action="{{ url_for('developpeur_bp.restore_from_backup_dev') }}" method="POST" onsubmit="return confirm('ATTENTION : Êtes-vous certain de vouloir restaurer les données pour la machine spécifiée ? Toutes les données locales actuelles seront définitivement écrasées !');">
-        <div class="input-group mb-3 mx-auto" style="max-width: 400px;">
-            <span class="input-group-text"><i class="fas fa-desktop"></i></span>
-            <input type="text" name="machine_id_to_restore" class="form-control" placeholder="Entrez l'ID machine du client" required>
-        </div>
-        <button type="submit" class="btn btn-danger"><i class="fas fa-exclamation-triangle me-2"></i>Lancer la Restauration</button>
-      </form>
-  </div></div>
+
+  <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fab fa-paypal section-icon'></i>Générer un Lien de Paiement</h5><div class='card-body'><form class='row gy-2 gx-3 align-items-end' method='POST' action='{{ url_for("developpeur_bp.generer_paiement") }}'><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-dollar-sign me-1'></i>Montant (USD)</label><input name='amount' type='number' step='0.01' class='form-control' placeholder='Ex: 25.50' required></div><div class='col-12 col-md-8'><label class='form-label fw-semibold'><i class='fas fa-info-circle me-1'></i>Description (pour le client)</label><input name='description' type='text' class='form-control' placeholder='Ex: Frais de configuration' required></div><div class='col-12 d-grid mt-3'><button class='btn btn-grad'><i class='fas fa-link me-1'></i>Générer le Lien de Paiement</button></div></form></div></div>
+  
+  {% if payment_link %}
+  <div class='card shadow-sm mb-4'><h5 class='card-header' style='background: linear-gradient(45deg, #28a745, #20c997); color: white;'><i class='fas fa-check-circle section-icon'></i>Lien de Paiement Prêt</h5><div class='card-body text-center'><p>Le lien de paiement pour <strong>{{ payment_amount }} USD</strong> ({{ payment_description }}) a été généré.</p><div class='my-3'><img src="data:image/png;base64,{{ qr_code_base64 }}" alt="QR Code de Paiement" class="img-fluid" style="max-width: 200px; border: 1px solid #ddd; padding: 5px; border-radius: 10px;"></div><div class='input-group mb-3'><input type='text' class='form-control' value='{{ payment_link }}' id='paymentLinkInput' readonly><button class='btn btn-outline-secondary' type='button' onclick='copyLink()'><i class='fas fa-copy'></i> Copier</button></div><a href="{{ payment_link }}" target="_blank" class="btn btn-success"><i class="fab fa-paypal me-2"></i>Ouvrir le lien de paiement</a></div></div>
+  {% endif %}
+
+  <div class='card shadow-sm mt-4'><h5 class='card-header'><i class='fas fa-database section-icon'></i>Gestion des Données et Sauvegardes</h5><div class='card-body'><div class="d-flex justify-content-center gap-3 flex-wrap"><a href="{{ url_for('developpeur_bp.export_medicalink_data') }}" class="btn btn-success"><i class="fas fa-file-archive me-2"></i>Exporter Données Locales</a><form action="{{ url_for('developpeur_bp.trigger_backup_dev') }}" method="POST" onsubmit="return confirm('Ceci va sauvegarder les données de CETTE machine (serveur) dans un dossier cloud portant son propre ID. Continuer ?');"><button type="submit" class="btn btn-warning"><i class="fas fa-cloud-upload-alt me-2"></i>Forcer Sauvegarde (Cette Machine)</button></form><a href="{{ url_for('developpeur_bp.firebase_browser') }}" class="btn btn-primary"><i class="fab fa-google me-2"></i>Gérer Espace Cloud</a></div></div></div>
+  <div class='card shadow-sm mt-4'><h5 class='card-header'><i class='fas fa-cloud-download-alt section-icon'></i>Restauration des Données Cloud</h5><div class='card-body text-center'><p class='text-muted'>Pour restaurer, entrez l'ID machine du client. Ceci remplacera **toutes** les données locales par la dernière sauvegarde trouvée pour cet ID dans le dossier <strong>client_backups</strong>. À utiliser avec une extrême prudence.</p><form action="{{ url_for('developpeur_bp.restore_from_backup_dev') }}" method="POST" onsubmit="return confirm('ATTENTION : Êtes-vous certain de vouloir restaurer les données pour la machine spécifiée ? Toutes les données locales actuelles seront définitivement écrasées !');"><div class="input-group mb-3 mx-auto" style="max-width: 400px;"><span class="input-group-text"><i class="fas fa-desktop"></i></span><input type="text" name="machine_id_to_restore" class="form-control" placeholder="Entrez l'ID machine du client" required></div><button type="submit" class="btn btn-danger"><i class="fas fa-exclamation-triangle me-2"></i>Lancer la Restauration</button></form></div></div>
 </div>
+
 <div class="modal fade" id="editAdminModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Modifier le compte Admin</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><form id="editAdminForm" method="POST" action=""><div class="modal-body"><input type="hidden" name="original_email" id="edit_original_email"><div class="mb-3"><label class="form-label">Email</label><input type="email" class="form-control" id="edit_email" name="email" required></div><div class="mb-3"><label class="form-label">Nom de la clinique</label><input type="text" class="form-control" id="edit_clinic" name="clinic" required></div><div class="mb-3"><label class="form-label">Date de création (Clinique)</label><input type="date" class="form-control" id="edit_clinic_creation_date" name="clinic_creation_date" required></div><div class="mb-3"><label class="form-label">Adresse</label><input type="text" class="form-control" id="edit_address" name="address" required></div><div class="mb-3"><label class="form-label">Téléphone</label><input type="tel" class="form-control" id="edit_phone" name="phone" placeholder='Numéro de téléphone' required></div><div class="mb-3"><label class="form-label">Nouveau mot de passe (laisser vide si inchangé)</label><input type="password" class="form-control" id="edit_password" name="password"></div><div class="mb-3"><label class="form-label">Confirmer le nouveau mot de passe</label><input type="password" class="form-control" id="edit_confirm_password" name="confirm_password"></div><div class="form-check"><input class="form-check-input" type="checkbox" id="edit_active" name="active"><label class="form-check-label" for="edit_active">Actif</label></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div></form></div></div></div>
 <div class="modal fade" id="changePlanModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Modifier Plan de Licence</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><form method="POST" action="{{ url_for('developpeur_bp.change_admin_plan') }}"><div class="modal-body"><input type="hidden" name="admin_email" id="plan_admin_email"><p>Compte : <strong id="plan_admin_email_display"></strong></p><div class="mb-3"><label class="form-label">ID Machine Client</label><input type="text" class="form-control mono" id="plan_machine_id" name="machine_id" required minlength="16" maxlength="16" placeholder="ID auto-collecté"><div class="form-text">Cet ID est normalement collecté à la connexion du client.</div></div><div class="mb-3"><label class="form-label">Nouveau Plan</label><select name="plan" id="plan_select" class="form-select">{% for value, label in plans %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div><div class="mb-3"><label class="form-label">Date d'activation</label><input type="date" class="form-control" id="plan_activation_date" name="activation_date" required></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button><button type="submit" class="btn btn-primary">Mettre à jour</button></div></form></div></div></div>
 <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script><script src='https://code.jquery.com/jquery-3.6.0.min.js'></script><script src='https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js'></script><script src='https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js'></script>
 <script>
+function copyLink() {
+  var copyText = document.getElementById("paymentLinkInput");
+  copyText.select();
+  copyText.setSelectionRange(0, 99999);
+  document.execCommand("copy");
+  Swal.fire({icon:'success',title:'Copié !',text:'Le lien a été copié dans le presse-papiers.',timer:1500,showConfirmButton:false});
+}
 $(function(){
   $('#tblKeys, #tblAdmin').DataTable({lengthChange:false,language:{url:'//cdn.datatables.net/plug-ins/1.13.1/i18n/fr-FR.json'}});
   $('#editAdminModal').on('show.bs.modal',function(e){const t=$(e.relatedTarget),a=t.data("email"),l=t.data("clinic"),i=t.data("clinic_creation_date"),d=t.data("address"),n=t.data("phone"),s=t.data("active"),o=$(this);o.find("#edit_original_email").val(a),o.find("#edit_email").val(a),o.find("#edit_clinic").val(l),o.find("#edit_clinic_creation_date").val(i),o.find("#edit_address").val(d),o.find("#edit_phone").val(n),o.find("#edit_active").prop("checked",s),o.find("#editAdminForm").attr("action","{{ url_for('developpeur_bp.edit_admin') }}")});
@@ -472,71 +541,53 @@ $(function(){
 </script></body></html>
 """
 
-# --- Template pour le Gestionnaire de Fichiers Firebase ---
 FIREBASE_BROWSER_HTML = """
 <!doctype html><html lang='fr'>
-{{ pwa_head()|safe }}
 <head><meta charset='utf-8'><title>Gestionnaire Cloud</title><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'><link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css' rel='stylesheet'><style>:root{--grad1:#4b6cb7;--grad2:#182848;}body{background:#f5f7fb;}.navbar{background:linear-gradient(90deg,var(--grad1),var(--grad2));}.breadcrumb-item a{text-decoration:none;}</style></head>
 <body>
 <nav class='navbar navbar-dark shadow-sm'><div class='container-fluid'><span class='navbar-brand d-flex align-items-center gap-2'><i class='fab fa-google'></i> Gestionnaire de Fichiers Firebase</span><a href='{{ url_for("developpeur_bp.dashboard") }}' class='btn btn-sm btn-outline-light rounded-pill'><i class='fas fa-arrow-left'></i> Retour Dashboard</a></div></nav>
 <div class='container my-4'>
     {% with m=get_flashed_messages(with_categories=true) %}{% if m %}{% for c,msg in m %}<div class='alert alert-{{c}} alert-dismissible fade show' role='alert'>{{msg}}<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>{% endfor %}{% endif %}{% endwith %}
     <div class='card shadow-sm'>
-        <div class='card-header'>
-            <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0 py-1">
-                <li class="breadcrumb-item"><a href="{{ url_for('.firebase_browser') }}"><i class="fas fa-home"></i></a></li>
-                {% for part in path_parts %}
-                    <li class="breadcrumb-item"><a href="{{ url_for('.firebase_browser', path=part.path) }}">{{ part.name }}</a></li>
-                {% endfor %}
-            </ol></nav>
-        </div>
-        <div class='card-body'>
-            <table class='table table-hover align-middle'>
-                <thead><tr><th>Nom</th><th>Taille</th><th>Modifié le</th><th class="text-end">Actions</th></tr></thead>
+        <div class='card-header'><nav aria-label="breadcrumb"><ol class="breadcrumb mb-0 py-1"><li class="breadcrumb-item"><a href="{{ url_for('.firebase_browser') }}"><i class="fas fa-home"></i></a></li>{% for part in path_parts %}<li class="breadcrumb-item"><a href="{{ url_for('.firebase_browser', path=part.path) }}">{{ part.name }}</a></li>{% endfor %}</ol></nav></div>
+        <div class='card-body'><table class='table table-hover align-middle'><thead><tr><th>Nom</th><th>Taille</th><th>Modifié le</th><th class="text-end">Actions</th></tr></thead>
                 <tbody>
-                {% for folder in folders %}
-                <tr>
-                    <td><a href="{{ url_for('.firebase_browser', path=folder) }}" class="text-decoration-none text-dark fw-bold"><i class="fas fa-folder text-warning me-2"></i>{{ folder.replace(current_path, '').strip('/') }}</a></td>
-                    <td>--</td><td>--</td>
-                    <td class="text-end">
-                        <form class="d-inline" action="{{ url_for('.firebase_delete_folder') }}" method="POST" onsubmit="return confirm('Voulez-vous vraiment supprimer ce dossier et tout son contenu ?');">
-                            <input type="hidden" name="folder_prefix" value="{{ folder }}">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer le dossier"><i class="fas fa-trash"></i></button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-                {% for file in files %}
-                <tr>
-                    <td><i class="fas fa-file-archive text-secondary me-2"></i>{{ file.name.replace(current_path, '') }}</td>
-                    <td>{{ "%.2f"|format(file.size / (1024*1024)) }} MB</td>
-                    <td>{{ file.updated.strftime('%Y-%m-%d %H:%M') }}</td>
-                    <td class="text-end">
-                        <a href="{{ file.download_url }}" class="btn btn-sm btn-outline-success" title="Télécharger le fichier"><i class="fas fa-download"></i></a>
-                        <form class="d-inline" action="{{ url_for('.firebase_delete_blob') }}" method="POST" onsubmit="return confirm('Voulez-vous vraiment supprimer ce fichier ?');">
-                            <input type="hidden" name="blob_name" value="{{ file.name }}">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer le fichier"><i class="fas fa-trash"></i></button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-                {% if not folders and not files %}
-                <tr><td colspan="4" class="text-center text-muted">Ce dossier est vide.</td></tr>
-                {% endif %}
-                </tbody>
-            </table>
-        </div>
-        <div class="card-footer">
-            <form action="{{ url_for('.firebase_upload_blob') }}" method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="path" value="{{ current_path }}">
-                <div class="input-group">
-                    <input type="file" class="form-control" name="uploaded_file" required>
-                    <button class="btn btn-primary" type="submit"><i class="fas fa-upload me-2"></i>Téléverser vers ce dossier</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+                {% for folder in folders %}<tr><td><a href="{{ url_for('.firebase_browser', path=folder) }}" class="text-decoration-none text-dark fw-bold"><i class="fas fa-folder text-warning me-2"></i>{{ folder.replace(current_path, '').strip('/') }}</a></td><td>--</td><td>--</td><td class="text-end"><form class="d-inline" action="{{ url_for('.firebase_delete_folder') }}" method="POST" onsubmit="return confirm('Voulez-vous vraiment supprimer ce dossier et tout son contenu ?');"><input type="hidden" name="folder_prefix" value="{{ folder }}"><button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer le dossier"><i class="fas fa-trash"></i></button></form></td></tr>{% endfor %}
+                {% for file in files %}<tr><td><i class="fas fa-file-archive text-secondary me-2"></i>{{ file.name.replace(current_path, '') }}</td><td>{{ "%.2f"|format(file.size / (1024*1024)) }} MB</td><td>{{ file.updated.strftime('%Y-%m-%d %H:%M') }}</td><td class="text-end"><a href="{{ file.download_url }}" class="btn btn-sm btn-outline-success" title="Télécharger le fichier"><i class="fas fa-download"></i></a><form class="d-inline" action="{{ url_for('.firebase_delete_blob') }}" method="POST" onsubmit="return confirm('Voulez-vous vraiment supprimer ce fichier ?');"><input type="hidden" name="blob_name" value="{{ file.name }}"><button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer le fichier"><i class="fas fa-trash"></i></button></form></td></tr>{% endfor %}
+                {% if not folders and not files %}<tr><td colspan="4" class="text-center text-muted">Ce dossier est vide.</td></tr>{% endif %}
+                </tbody></table></div>
+        <div class="card-footer"><form action="{{ url_for('.firebase_upload_blob') }}" method="POST" enctype="multipart/form-data"><input type="hidden" name="path" value="{{ current_path }}"><div class="input-group"><input type="file" class="form-control" name="uploaded_file" required><button class="btn btn-primary" type="submit"><i class="fas fa-upload me-2"></i>Téléverser vers ce dossier</button></div></form></div>
+    </div></div>
 <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>
 </body></html>
+"""
+
+PAYMENT_SUCCESS_HTML = """
+<!DOCTYPE html><html lang='fr'>
+<head><meta charset='UTF-8'><title>Paiement Réussi</title><link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'><link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css' rel='stylesheet'><style>body{background-color:#f0f9f5; display: flex; align-items: center; justify-content: center; height: 100vh;}.card{border: 2px solid #198754; border-radius: 1rem;}</style></head>
+<body><div class='container'><div class='row justify-content-center'><div class='col-md-6'><div class='card shadow-lg text-center p-4'>
+<h1 class='text-success'><i class='fas fa-check-circle fa-3x'></i></h1><h2 class='mt-3'>Paiement Réussi !</h2>
+<p class='lead'>Merci pour votre paiement de <strong>{{ details.amount }} USD</strong> pour <em>"{{ details.description }}"</em>.</p>
+<p class='text-muted'>Votre transaction a été complétée avec succès. Vous pouvez fermer cette page.</p>
+</div></div></div></div></body></html>
+"""
+
+PAYMENT_CANCEL_HTML = """
+<!DOCTYPE html><html lang='fr'>
+<head><meta charset='UTF-8'><title>Paiement Annulé</title><link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'><link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css' rel='stylesheet'><style>body{background-color:#fff8f5; display: flex; align-items: center; justify-content: center; height: 100vh;}.card{border: 2px solid #ffc107; border-radius: 1rem;}</style></head>
+<body><div class='container'><div class='row justify-content-center'><div class='col-md-6'><div class='card shadow-lg text-center p-4'>
+<h1 class='text-warning'><i class='fas fa-exclamation-triangle fa-3x'></i></h1><h2 class='mt-3'>Paiement Annulé</h2>
+<p class='lead'>La transaction a été annulée.</p>
+<p class='text-muted'>Aucun paiement n'a été effectué. Vous pouvez fermer cette page ou essayer à nouveau.</p>
+</div></div></div></div></body></html>
+"""
+
+PAYMENT_FAIL_HTML = """
+<!DOCTYPE html><html lang='fr'>
+<head><meta charset='UTF-8'><title>Échec du Paiement</title><link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'><link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css' rel='stylesheet'><style>body{background-color:#fbeff0; display: flex; align-items: center; justify-content: center; height: 100vh;}.card{border: 2px solid #dc3545; border-radius: 1rem;}</style></head>
+<body><div class='container'><div class='row justify-content-center'><div class='col-md-6'><div class='card shadow-lg text-center p-4'>
+<h1 class='text-danger'><i class='fas fa-times-circle fa-3x'></i></h1><h2 class='mt-3'>Échec du Paiement</h2>
+<p class='lead'>Nous n'avons pas pu valider votre paiement.</p>
+<p class='text-muted'>Veuillez contacter le support si le problème persiste.</p>
+</div></div></div></div></body></html>
 """
