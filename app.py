@@ -1,4 +1,4 @@
-# app.py (VERSION COMPLÈTE ET CORRIGÉE POUR LE MODE TEXTE)
+# app.py (VERSION COMPLÈTE ET CORRIGÉE POUR LE MODE TEXTE SANS .db POUR L'IA)
 import os
 from datetime import datetime, timedelta
 import webbrowser
@@ -23,8 +23,8 @@ from flask_mail import Mail
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Import de tous les Blueprints de l'application
-from ia_assitant import ia_assitant_bp, db as ia_db
-# MODIFICATION: Suppression de l'import de AVAILABLE_VOICES
+# L'import de `db` depuis `ia_assitant` est retiré car il n'est plus utilisé.
+from ia_assitant import ia_assitant_bp
 from ia_assistant_synapse import ia_assistant_synapse_bp
 import activation, theme, utils, pwa, login, accueil, administrateur, rdv, facturation, statistique, developpeur, routes, patient_rdv, biologie, radiologie, pharmacie, comptabilite, gestion_patient, guide
 from firebase import FirebaseManager
@@ -40,12 +40,9 @@ def create_app():
     app.secret_key = os.environ.get("SECRET_KEY", "une_cle_secrete_par_defaut_pour_le_dev")
     app.permanent_session_lifetime = timedelta(days=7)
 
-    # Configuration de la base de données (SQLAlchemy)
-    db_url = os.environ.get('DATABASE_URL')
-    if db_url and db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url or f"sqlite:///{os.path.join(app.instance_path, 'medical_assistant.db')}"
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # --- SUPPRESSION DE LA CONFIGURATION SQLALCHEMY ---
+    # La configuration de la base de données (SQLAlchemy) n'est plus nécessaire ici.
+    # Les lignes comme app.config['SQLALCHEMY_DATABASE_URI'] sont retirées.
 
     # Configuration de l'envoi d'emails (Flask-Mail)
     app.config['MAIL_SERVER'] = 'smtp.gmail.com'
@@ -55,7 +52,7 @@ def create_app():
     app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
     
     # Initialisation des extensions Flask
-    ia_db.init_app(app)
+    # L'initialisation de la base de données (ia_db.init_app(app)) est retirée.
     mail.init_app(app)
     theme.init_theme(app)
 
@@ -73,9 +70,6 @@ def create_app():
             'logo_path': cfg.get('logo_path', '/static/pwa/icon-512.png'),
             'background_file_path': cfg.get('background_file_path', '')
         }
-
-    # MODIFICATION: Suppression du context processor qui injectait les voix.
-    # Cette fonction n'est plus nécessaire.
 
     # AMÉLIORATION : Centralisation de l'enregistrement des Blueprints
     blueprints_to_register = [
@@ -143,11 +137,9 @@ def create_app():
             return redirect(url_for("activation.activation"))
     
     routes.register_routes(app)
-    with app.app_context():
-        # NOTE : create_all() est parfait pour le développement, mais pour la production,
-        # il est recommandé d'utiliser un outil de migration comme Flask-Migrate
-        # pour gérer les changements de structure de la base de données sans perte de données.
-        ia_db.create_all()
+    
+    # --- SUPPRESSION DE LA CRÉATION DES TABLES DE LA BASE DE DONNÉES ---
+    # Le bloc `with app.app_context(): ia_db.create_all()` est retiré.
         
     print("✅ Application Flask démarrée.")
     return app
@@ -183,6 +175,7 @@ def daily_backup_task():
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(daily_backup_task, 'cron', hour='0,12', minute=0)
 scheduler.start()
+app.scheduler = scheduler
 print("🗓️ Tâche de sauvegarde quotidienne planifiée.")
 
 # Lancement du serveur de développement

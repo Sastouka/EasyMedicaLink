@@ -21,14 +21,14 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 # --- 2. CONFIGURATION DU SERVICE IA ---
 # Clé API récupérée depuis les variables d'environnement
-API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyALjQr4vF0coQaGDDtEr6wsdvRBUGCwPII")
+API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyDG42WVlylJ9Ox7TeTD-vrbo4Q1jhnnLz4")
 if "Votre_Cle_API_GOOGLE" in API_KEY:
     print("AVERTISSEMENT: La clé d'accès Google n'est pas configurée pour l'assistant Synapse.")
 
 try:
     genai.configure(api_key=API_KEY)
     # Confirmation de l'utilisation du modèle "Flash" pour une réactivité maximale.
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    model = genai.GenerativeModel('gemini-flash-latest')
 except Exception as e:
     print(f"Erreur critique lors de la configuration du service IA : {e}")
     model = None

@@ -18,7 +18,6 @@ import login as login_mod
 import activation
 import utils
 from activation import get_hardware_id, create_paypal_order, capture_paypal_order
-from ia_assitant import db as ia_db # Ajout pour corriger le verrouillage de la DB
 
 # ───────── 1. Paramètres ─────────
 _DEV_MAIL = "sastoukadigital@gmail.com"
@@ -369,24 +368,6 @@ def restore_from_backup_dev():
     local_data_path = str(Path(utils.application_path) / "MEDICALINK_DATA")
     
     flash(f"Lancement de la restauration pour la machine '{machine_id_to_restore}'...", "info")
-    
-    # --- SOLUTION FINALE : FERMETURE COMPLÈTE ---
-    try:
-        # 1. On arrête le planificateur de tâches en arrière-plan
-        print("ℹ️ Arrêt du planificateur de tâches...")
-        if current_app.scheduler.running:
-            current_app.scheduler.shutdown()
-        
-        # 2. On ferme la session de la base de données
-        print("ℹ️ Fermeture de la session de la base de données...")
-        ia_db.session.remove()
-        
-        # 3. On ferme les connexions du moteur de la base de données
-        print("ℹ️ Fermeture des connexions du moteur...")
-        ia_db.engine.dispose()
-        
-    except Exception as e:
-        print(f"🔥 Avertissement lors de l'arrêt des services : {e}")
     
     success = firebase_manager.restore_latest_backup(
         local_data_path, 

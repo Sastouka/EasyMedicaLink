@@ -1,15 +1,18 @@
-# ia_assitant.py - v5.0 - UX Améliorée avec Miniatures et Capacités Gemini étendues
+# ia_assitant.py - v5.0 - Version JSON par utilisateur avec prompt amélioré
 import os
 import pathlib
 import datetime
 import pandas as pd
 import google.generativeai as genai
+import json
+import uuid
+import hashlib
+import threading
 
 from flask import (
     Blueprint, render_template_string, session, redirect,
     url_for, flash, request, jsonify, Response
 )
-from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
 # --- Imports des modules locaux ---
@@ -20,32 +23,54 @@ import theme
 # --- Configuration et Initialisation ---
 ia_assitant_bp = Blueprint('ia_assitant', __name__, url_prefix='/ia_assitant')
 
-# Association de la base de données à l'application Flask.
-db = SQLAlchemy()
+# --- Fonctions de gestion des fichiers JSON ---
+JSON_CONVERSATIONS_DIR = None
+json_lock = threading.Lock() # Verrou pour éviter les conflits d'écriture
 
-# --- Modèles de Base de Données ---
-class Conversation(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_email = db.Column(db.String(120), nullable=False)
-    title = db.Column(db.String(150), nullable=False, default='Nouvelle Conversation')
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    messages = db.relationship('Message', backref='conversation', lazy=True, cascade="all, delete-orphan")
+def _initialize_json_storage():
+    """Initialise le chemin de stockage des conversations JSON."""
+    global JSON_CONVERSATIONS_DIR
+    if utils.DYNAMIC_BASE_DIR:
+        JSON_CONVERSATIONS_DIR = os.path.join(utils.DYNAMIC_BASE_DIR, "IA_Conversations")
+        os.makedirs(JSON_CONVERSATIONS_DIR, exist_ok=True)
 
-class Message(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    conversation_id = db.Column(db.Integer, db.ForeignKey('conversation.id'), nullable=False)
-    role = db.Column(db.String(10), nullable=False)  # 'user' or 'model'
-    content = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+def _get_user_conversations_path(user_email: str) -> str:
+    """Génère un nom de fichier sécurisé à partir de l'email de l'utilisateur."""
+    if not JSON_CONVERSATIONS_DIR:
+        _initialize_json_storage()
+    # Hacher l'email pour créer un nom de fichier valide et anonyme
+    email_hash = hashlib.sha1(user_email.encode()).hexdigest()
+    return os.path.join(JSON_CONVERSATIONS_DIR, f"{email_hash}.json")
+
+def load_user_conversations(user_email: str) -> list:
+    """Charge les conversations d'un utilisateur depuis son fichier JSON."""
+    filepath = _get_user_conversations_path(user_email)
+    with json_lock:
+        if not os.path.exists(filepath):
+            return []
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                if os.path.getsize(filepath) == 0:
+                    return []
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
+
+def save_user_conversations(user_email: str, conversations: list):
+    """Sauvegarde la liste complète des conversations d'un utilisateur."""
+    filepath = _get_user_conversations_path(user_email)
+    with json_lock:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(conversations, f, indent=2, ensure_ascii=False)
 
 # --- Configuration de l'API Gemini ---
-API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyALjQr4vF0coQaGDDtEr6wsdvRBUGCwPII") # Remplacez par votre clé
-if API_KEY == "Votre_Cle_API_GOOGLE":
+API_KEY = os.environ.get("GOOGLE_API_KEY", "VOTRE_CLE_API") 
+if API_KEY == "VOTRE_CLE_API":
     print("AVERTISSEMENT: La clé API Google n'est pas configurée.")
 
 try:
     genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    model = genai.GenerativeModel('gemini-pro-latest') # Utilisation de la version Pro comme discuté
 except Exception as e:
     print(f"Erreur critique lors de la configuration de l'API Gemini : {e}")
     model = None
@@ -116,7 +141,6 @@ ia_assitant_template = """
         .message:hover .action-buttons { opacity: 1; right: 5px; }
         .action-btn { background: #e9ecef; border: 1px solid #ced4da; color: var(--text-secondary); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
-        /* --- STYLES AJOUTÉS POUR UX --- */
         .message .text-content .message-attachments { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
         .message .text-content .message-thumbnail { max-width: 150px; max-height: 150px; border-radius: 8px; cursor: pointer; border: 1px solid #dee2e6; }
         .file-preview .file-icon { font-size: 2rem; color: var(--text-secondary); }
@@ -193,7 +217,7 @@ ia_assitant_template = """
     
     <script>
         let currentConversationId = null;
-        let uploadedFilesCache = []; // Cache pour garder en mémoire les miniatures
+        let uploadedFilesCache = [];
         
         const chatForm = document.getElementById('chat-form');
         const chatMessages = document.getElementById('chat-messages');
@@ -264,7 +288,7 @@ ia_assitant_template = """
                 if (file.type.startsWith('image/')) {
                     reader.readAsDataURL(file);
                 } else {
-                    reader.onload({ target: { result: null } }); // Trigger onload for non-image files
+                    reader.onload({ target: { result: null } });
                 }
                 uploadedFilesCache.push(fileData);
             });
@@ -276,8 +300,6 @@ ia_assitant_template = """
                 if (file.name !== fileName) dt.items.add(file);
             });
             fileInput.files = dt.files;
-            
-            // Re-render previews from the new file list
             handleFileSelection();
         }
 
@@ -322,7 +344,7 @@ ia_assitant_template = """
             }).then(async (result) => {
                 if (result.isConfirmed) {
                     try {
-                        const response = await fetch(`{{ url_for('ia_assitant.home_ia_assitant') }}conversations/delete/${id}`, { method: 'DELETE' });
+                        const response = await fetch(`{{ url_for('ia_assitant.delete_conversation', conv_id=0) }}`.replace('0', id), { method: 'DELETE' });
                         const resData = await response.json();
                         if (!response.ok) throw new Error(resData.error || 'La suppression a échoué.');
                         Swal.fire('Supprimée!', 'La conversation a été supprimée.', 'success');
@@ -343,11 +365,10 @@ ia_assitant_template = """
         }
 
         async function loadConversation(id) {
-            const response = await fetch(`{{ url_for('ia_assitant.home_ia_assitant') }}conversations/${id}`);
+            const response = await fetch(`{{ url_for('ia_assitant.get_conversation_messages', conv_id=0) }}`.replace('0', id));
             const data = await response.json();
             chatMessages.innerHTML = '';
             data.messages.forEach(msg => {
-                // Pour les anciens messages, on ne peut pas recréer les miniatures, on affiche juste le texte
                 appendMessage(msg.role === 'model' ? 'ai' : 'user', msg.content, true, []);
             });
             chatMessages.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
@@ -378,7 +399,10 @@ ia_assitant_template = """
             
             try {
                 const response = await fetch("{{ url_for('ia_assitant.chat_stream') }}", { method: 'POST', body: formData });
-                if (!response.ok) throw new Error((await response.json()).error);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Une erreur inconnue est survenue');
+                }
                 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
@@ -469,7 +493,8 @@ ia_assitant_template = """
 @ia_assitant_bp.route('/')
 def home_ia_assitant():
     """ Affiche la page principale du chat. """
-    if 'email' not in session: return redirect(url_for('login.login'))
+    if 'email' not in session:
+        return redirect(url_for('login.login'))
     if session.get('role') not in ['admin', 'medecin']:
         flash("Accès non autorisé.", "danger")
         return redirect(url_for('accueil.accueil'))
@@ -494,44 +519,49 @@ def get_conversations():
     """ Récupère la liste des conversations pour l'utilisateur connecté. """
     if 'email' not in session: return jsonify({"error": "Non autorisé"}), 401
     user_email = session['email']
-    convs = Conversation.query.filter_by(user_email=user_email).order_by(Conversation.created_at.desc()).all()
-    return jsonify([{'id': c.id, 'title': c.title} for c in convs])
+    conversations = load_user_conversations(user_email)
+    conversations.sort(key=lambda c: c.get('created_at', ''), reverse=True)
+    return jsonify([{'id': c.get('id'), 'title': c.get('title')} for c in conversations])
 
-@ia_assitant_bp.route('/conversations/<int:conv_id>', methods=['GET'])
+@ia_assitant_bp.route('/conversations/<string:conv_id>', methods=['GET'])
 def get_conversation_messages(conv_id):
     """ Récupère les messages d'une conversation spécifique. """
     if 'email' not in session: return jsonify({"error": "Non autorisé"}), 401
-    conv = Conversation.query.get(conv_id)
-    if not conv or conv.user_email != session['email']:
+    user_email = session['email']
+    conversations = load_user_conversations(user_email)
+    
+    conv = next((c for c in conversations if c.get('id') == conv_id), None)
+    
+    if not conv:
         return jsonify({"error": "Conversation non trouvée"}), 404
     
-    messages = [{'role': m.role, 'content': m.content} for m in conv.messages]
-    return jsonify({'title': conv.title, 'messages': messages})
+    return jsonify({'title': conv.get('title'), 'messages': conv.get('messages', [])})
 
-@ia_assitant_bp.route('/conversations/delete/<int:conv_id>', methods=['DELETE'])
+@ia_assitant_bp.route('/conversations/delete/<string:conv_id>', methods=['DELETE'])
 def delete_conversation(conv_id):
     """ Supprime une conversation spécifique. """
     if 'email' not in session: return jsonify({"error": "Non autorisé"}), 401
     user_email = session['email']
-    conv = Conversation.query.get(conv_id)
-
-    if not conv or conv.user_email != user_email:
-        return jsonify({"error": "Accès non autorisé"}), 403
-
-    try:
-        db.session.delete(conv)
-        db.session.commit()
+    conversations = load_user_conversations(user_email)
+    
+    initial_len = len(conversations)
+    conversations = [c for c in conversations if c.get('id') != conv_id]
+    
+    if len(conversations) < initial_len:
+        save_user_conversations(user_email, conversations)
         return jsonify({"success": "Conversation supprimée"}), 200
-    except Exception as e:
-        db.session.rollback()
-        print(f"Erreur lors de la suppression de la conversation {conv_id}: {e}")
-        return jsonify({"error": "Erreur interne du serveur"}), 500
+    else:
+        return jsonify({"error": "Conversation non trouvée"}), 404
 
 @ia_assitant_bp.route('/chat-stream', methods=['POST'])
 def chat_stream():
     """ Gère l'envoi de message et le streaming de la réponse. """
     if 'email' not in session: return jsonify({"error": "Non autorisé"}), 401
     if not model: return jsonify({"error": "Modèle IA non initialisé"}), 500
+
+    _initialize_json_storage()
+    user_email = session['email']
+    conversations = load_user_conversations(user_email)
 
     data = request.form
     files = request.files.getlist('file_upload')
@@ -548,26 +578,15 @@ def chat_stream():
     
     prompt_parts, user_message_content, temp_files = [], [], []
 
-    # --- NOUVEAU PROMPT SYSTÈME AMÉLIORÉ ---
     system_instruction = f"""
-    Tu es Synapse, un assistant médical IA de pointe intégré à l'application EasyMedicaLink.
-    Date et heure actuelles : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.
+    Tu es Synapse, un assistant IA professionnel pour l'application EasyMedicaLink.
 
-    **Mission Principale** :
-    Assister les professionnels de santé (médecins, pharmaciens, chercheurs) avec précision, rigueur et professionnalisme.
-
-    **Périmètre de Compétences STRICT** :
-    1.  **Domaines Autorisés** : Médecine, santé humaine, biologie, pharmacologie, radiologie, interprétation de résultats d'analyses, et gestion administrative de cabinet médical.
-    2.  **Sujets Interdits** : TOUT ce qui ne relève pas des domaines ci-dessus (ex: histoire, finance, programmation, culture générale). Si une question est hors sujet, décline poliment en rappelant ta spécialisation. Exemple : "Je suis Synapse, un assistant spécialisé dans le domaine médical. Je ne peux malheureusement pas répondre aux questions concernant la programmation."
-
-    **Directives de Communication** :
-    - **Clarté et Structure** : Utilise Markdown (titres, listes, gras, tableaux) pour structurer tes réponses. Formate le code avec des blocs de code appropriés.
-    - **Précision** : Fournis des réponses factuelles. Si une information est incertaine, nuance ta réponse.
-    - **Multimodalité** : Tu peux recevoir des images, des documents, de l'audio et de la vidéo.
-        - Pour analyser une image (radio, ECG, photo de symptôme), sois descriptif et méthodique.
-        - **IMPORTANT** : Si tu fais référence à une image envoyée par l'utilisateur dans ta réponse, utilise la balise `[thumbnail:nom_exact_du_fichier.ext]` pour que l'interface puisse l'afficher.
-    - **Sécurité** : Ne jamais demander, stocker ou deviner des informations personnelles identifiables (IPI) d'un patient. Toutes les données doivent rester anonymes.
-    - **Langage** : Reste formel et professionnel. Adresse-toi à l'utilisateur comme "Docteur".
+    **RÈGLES IMPÉRATIVES :**
+    - **Ton & Style :** Ton direct, professionnel, et concis. Va droit au but. Pas de salutations ou de phrases de politesse superflues. Adresse-toi à l'utilisateur par "Docteur".
+    - **Périmètre :** Réponds **uniquement** aux questions relevant du domaine médical (médecine, biologie, pharmacologie, radiologie, gestion de cabinet). Si la question est hors sujet, décline poliment en rappelant ta spécialisation.
+    - **Format :** Structure tes réponses avec Markdown (titres en gras **, listes à puces -, etc.).
+    - **Confidentialité :** Ne jamais demander, stocker ou utiliser les informations personnelles d'un patient.
+    - **Analyse de Fichiers :** Si tu analyses un fichier image fourni par l'utilisateur, mentionne-le en utilisant la balise `[thumbnail:nom_exact_du_fichier.ext]`.
     """
     prompt_parts.append(system_instruction)
 
@@ -578,7 +597,6 @@ def chat_stream():
             file.save(temp_path)
             temp_files.append(temp_path)
             
-            # Traitement spécifique pour les fichiers non-images/vidéos si nécessaire
             if secure_name.endswith(('.xlsx', '.xls')):
                 df = pd.read_excel(temp_path)
                 prompt_parts.append(f"Analyse du fichier Excel '{secure_name}':\n{df.to_string()}")
@@ -591,50 +609,54 @@ def chat_stream():
             prompt_parts.append(question)
             user_message_content.append(question)
 
-        user_email = session['email']
-        if conversation_id:
-            conv = Conversation.query.get(conversation_id)
-            if not conv or conv.user_email != user_email:
-                return jsonify({"error": "Conversation invalide"}), 403
-        else:
-            title = (question[:50] + '...') if len(question) > 50 else question
-            if not title and files:
-                title = f"Analyse de {files[0].filename}"
-            conv = Conversation(user_email=user_email, title=title)
-            db.session.add(conv)
-            db.session.commit() # Commit pour obtenir l'ID de la nouvelle conversation
+        current_conv = None
+        if conversation_id and conversation_id != 'null':
+            current_conv = next((c for c in conversations if c.get('id') == conversation_id), None)
+        
+        if not current_conv:
+            title = (question[:50] + '...') if len(question) > 50 else (f"Analyse de {files[0].filename}" if files else "Nouvelle Discussion")
+            current_conv = {
+                "id": str(uuid.uuid4()),
+                "title": title,
+                "created_at": datetime.datetime.utcnow().isoformat(),
+                "messages": []
+            }
+            conversations.append(current_conv)
 
-        user_msg = Message(conversation_id=conv.id, role='user', content="\n".join(user_message_content))
-        db.session.add(user_msg)
-        db.session.commit()
+        user_msg = {'role': 'user', 'content': "\n".join(user_message_content)}
+        current_conv['messages'].append(user_msg)
 
-        # Construction de l'historique pour le modèle
-        chat_history = []
-        for msg in conv.messages:
-             # Le rôle pour l'API est 'model' pour l'IA, 'user' pour l'utilisateur
-            chat_history.append({'role': msg.role, 'parts': [part for part in msg.content.split('\n') if part]})
-
-        chat_session = model.start_chat(history=chat_history[:-1]) # Historique sans le dernier message de l'utilisateur
+        chat_history = [{'role': m['role'], 'parts': [part for part in m['content'].split('\n') if part]} for m in current_conv['messages'][:-1]]
+        
+        chat_session = model.start_chat(history=chat_history)
         
         full_response_text = ""
         try:
             response_stream = chat_session.send_message(prompt_parts, stream=True)
-            for chunk in response_stream:
-                if chunk.text:
-                    full_response_text += chunk.text
+            def generate_chunks():
+                nonlocal full_response_text
+                for chunk in response_stream:
+                    if chunk.text:
+                        full_response_text += chunk.text
+                        yield chunk.text
+            
+            response_chunks = list(generate_chunks())
+            full_response_text = "".join(response_chunks)
+
         except Exception as e:
             print(f"Erreur pendant l'appel à l'API Gemini: {e}")
             full_response_text = f"**Erreur de communication avec l'assistant IA.**\nDétails: {str(e)}"
 
-        ai_msg = Message(conversation_id=conv.id, role='model', content=full_response_text)
-        db.session.add(ai_msg)
-        db.session.commit()
+        ai_msg = {'role': 'model', 'content': full_response_text}
+        current_conv['messages'].append(ai_msg)
+        
+        save_user_conversations(user_email, conversations)
 
-        def generate_stream(text_to_stream):
-            yield text_to_stream
+        def final_stream(text):
+            yield text
 
-        resp = Response(generate_stream(full_response_text), mimetype='text/plain; charset=utf-8')
-        resp.headers['X-Conversation-Id'] = str(conv.id)
+        resp = Response(final_stream(full_response_text), mimetype='text/plain; charset=utf-8')
+        resp.headers['X-Conversation-Id'] = current_conv['id']
         return resp
 
     except Exception as e:
