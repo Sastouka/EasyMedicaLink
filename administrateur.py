@@ -8,6 +8,8 @@
 # - Correction du chemin pour la création de l'archive ZIP en se basant sur utils.EXCEL_FOLDER.
 # - Amélioration de l'UI du template : couleurs d'icônes diversifiées et listes déroulantes optimisées.
 # - Correction de la liste déroulante "Médecin lié" pour afficher le nom des paramètres généraux.
+# - MISE À JOUR CRITIQUE: Implémentation de la limite globale de 3 comptes secondaires pour l'administrateur.
+# - Correction pré-remplissage nom clinique et médecin dans get_admin_dashboard_context.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -25,14 +27,14 @@ from werkzeug.utils import secure_filename
 import qrcode
 import base64
 import io
-import shutil 
-import zipfile 
-import tempfile 
+import shutil
+import zipfile
+import tempfile
 
 # Internal module imports
 import theme
 import utils
-import login 
+import login
 
 # Import the function to load all excels from statistique.py
 # Fallback if statistique.py is not directly importable
@@ -53,7 +55,7 @@ except ImportError:
 # Create the Blueprint for administration routes
 administrateur_bp = Blueprint('administrateur_bp', __name__, url_prefix='/administrateur')
 
-# Define default roles and their limits
+# Define default roles and their limits (Used for UI/structure, but global limit now applied in creation logic)
 DEFAULT_ROLE_LIMITS = {
     "medecin": {"max": float('inf'), "current": 0},
     "assistante": {"max": float('inf'), "current": 0},
@@ -121,7 +123,25 @@ def generate_qr_code_data_uri(data: str) -> str:
 def get_admin_dashboard_context():
     admin_email = session['email']
     full_users = login.load_users()
-    config = utils.load_config()
+    config = utils.load_config() # Charger la config existante depuis config.json
+
+    # ---> NOUVELLE LOGIQUE CORRIGÉE : Pré-remplissage des valeurs par défaut <---
+    admin_user_data = full_users.get(admin_email)
+
+    # Vérifier et pré-remplir si les valeurs de config sont vides ou inexistantes
+    if admin_user_data:
+        # Pré-remplir le nom de la clinique si non défini ou vide dans config.json
+        if not config.get('nom_clinique') or not str(config['nom_clinique']).strip():
+            config['nom_clinique'] = admin_user_data.get('clinic', '').strip() # Utilise la clé 'clinic' du user data
+
+        # Pré-remplir le nom du médecin si non défini ou vide dans config.json
+        if not config.get('doctor_name') or not str(config['doctor_name']).strip():
+            admin_prenom = admin_user_data.get('prenom', '')
+            admin_nom = admin_user_data.get('nom', '')
+            if admin_prenom or admin_nom:
+                # Combine prénom et nom depuis le user data
+                config['doctor_name'] = f"{admin_prenom} {admin_nom}".strip()
+    # ---> FIN NOUVELLE LOGIQUE CORRIGÉE <---
 
     users_for_table = []
     current_role_counts = {role: 0 for role in DEFAULT_ROLE_LIMITS.keys()}
@@ -138,21 +158,26 @@ def get_admin_dashboard_context():
                 'linked_doctor': u.get('linked_doctor', ''), 'allowed_pages': u.get('allowed_pages', [])
             }
             users_for_table.append(user_info)
-    
-    role_limits_from_config = config.get('role_limits', DEFAULT_ROLE_LIMITS)
+
+    # Remplacer DEFAULT_ROLE_LIMITS par la logique de la limite globale (3 utilisateurs max)
+    # Pour l'affichage, nous devons quand même calculer le nombre actuel
+
+    # Compter le nombre d'utilisateurs secondaires (rôles autres qu'admin)
+    current_non_admin_users = sum(1 for u in full_users.values() if u.get('owner') == admin_email and u.get('role') != 'admin' and u.get('email') != admin_email)
+    GLOBAL_USER_LIMIT = 3
 
     display_role_limits = {}
-    for role, limits in role_limits_from_config.items():
-        display_role_limits[role] = {
-            "current": current_role_counts.get(role, 0),
-            "max": "Illimité" if limits["max"] == float('inf') else limits["max"]
-        }
     for role, default_limits in DEFAULT_ROLE_LIMITS.items():
-        if role not in display_role_limits:
-            display_role_limits[role] = {
-                "current": current_role_counts.get(role, 0),
-                "max": "Illimité" if default_limits["max"] == float('inf') else default_limits["max"]
-            }
+         if role == 'admin':
+             max_limit = "Illimité"
+         else:
+             # Afficher la limite de 3 pour les rôles secondaires
+             max_limit = str(GLOBAL_USER_LIMIT)
+
+         display_role_limits[role] = {
+             "current": current_role_counts.get(role, 0),
+             "max": max_limit
+         }
 
     current_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -167,43 +192,55 @@ def get_admin_dashboard_context():
     patient_appointment_link = url_for('patient_rdv.patient_rdv_home', admin_prefix=admin_email_prefix, _external=True)
     qr_code_data_uri = generate_qr_code_data_uri(patient_appointment_link)
 
-    # --- MODIFICATION START ---
     # Build the list of doctors for the dropdown
     doctors = [u for u in users_for_table if u['role'] == 'medecin' and u['active']]
     main_admin = full_users.get(admin_email)
-    
-    # Check if the admin is already in the list (e.g., if they created a separate 'medecin' account for themselves)
+
     admin_email_in_doctors_list = any(d['email'] == admin_email for d in doctors)
 
     if main_admin and not admin_email_in_doctors_list:
-        # Prioritize the name from general settings for the main admin
+        # ---> CORRECTION : Utiliser le nom du médecin depuis 'config' (qui a été pré-rempli si besoin) <---
         config_doctor_name = config.get('doctor_name', '').strip()
-        
+
         if config_doctor_name:
-            # Split the full name into prenom and nom
             parts = config_doctor_name.split(' ', 1)
             prenom = parts[0]
             nom = parts[1] if len(parts) > 1 else ''
-        else:
-            # Fallback to the user's profile name if config is empty
+        else: # Fallback si même la config est vide (peu probable après pré-remplissage)
             prenom = main_admin.get('prenom', '')
             nom = main_admin.get('nom', '')
+        # ---> FIN CORRECTION <---
 
         doctors.append({'email': admin_email, 'nom': nom, 'prenom': prenom})
-    # --- MODIFICATION END ---
-    
+
     doctors = sorted(doctors, key=lambda d: (d.get('prenom', ''), d.get('nom', '')))
 
+    # Calculer logged_in_doctor_name pour l'en-tête (basé sur l'utilisateur connecté)
+    logged_in_doctor_name_header = ""
+    if admin_user_data:
+        logged_in_doctor_name_header = f"{admin_user_data.get('prenom', '')} {admin_user_data.get('nom', '')}".strip()
+
     return {
-        "users": users_for_table, "config": config, "current_date": current_date,
-        "theme_vars": theme.current_theme(), "theme_names": list(theme.THEMES.keys()),
-        "plan": get_current_plan_info(), "admin_email": admin_email, "backgrounds": backgrounds,
-        "patient_appointment_link": patient_appointment_link, "qr_code_data_uri": qr_code_data_uri,
-        "doctors": doctors, "role_limits": display_role_limits, "DEFAULT_ROLE_LIMITS": DEFAULT_ROLE_LIMITS,
+        "users": users_for_table,
+        "config": config, # <-- Passer le dictionnaire config (potentiellement modifié)
+        "current_date": current_date,
+        "theme_vars": theme.current_theme(),
+        "theme_names": list(theme.THEMES.keys()),
+        "plan": get_current_plan_info(),
+        "admin_email": admin_email,
+        "backgrounds": backgrounds,
+        "patient_appointment_link": patient_appointment_link,
+        "qr_code_data_uri": qr_code_data_uri,
+        "doctors": doctors,
+        "role_limits": display_role_limits,
+        "DEFAULT_ROLE_LIMITS": DEFAULT_ROLE_LIMITS,
         "all_blueprints": login.ALL_BLUEPRINTS,
         "medications_options": config.get('medications_options', utils.default_medications_options),
         "analyses_options": config.get('analyses_options', utils.default_analyses_options),
-        "radiologies_options": config.get('radiologies_options', utils.default_radiologies_options)
+        "radiologies_options": config.get('radiologies_options', utils.default_radiologies_options),
+        "global_user_count": current_non_admin_users,
+        "global_user_limit": GLOBAL_USER_LIMIT,
+        "logged_in_doctor_name": logged_in_doctor_name_header # Pour l'affichage dans l'en-tête
     }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -220,59 +257,92 @@ def get_user_details(user_email: str) -> dict:
     }
 
 def create_new_user(form_data: dict) -> tuple[bool, str]:
+    """
+    Crée un nouvel utilisateur en appliquant une limite globale de 3 comptes
+    secondaires maximum pour l'administrateur.
+    """
     admin_email = session['email']
-    nom, prenom, role, password = form_data['nom'].strip(), form_data['prenom'].strip(), form_data['role'].strip(), form_data['password'].strip()
+    nom, prenom, role, password = (
+        form_data['nom'].strip(), form_data['prenom'].strip(),
+        form_data['role'].strip(), form_data['password'].strip()
+    )
     phone, linked_doctor = form_data.get('phone', '').strip(), form_data.get('linked_doctor', '').strip()
     allowed_pages = form_data.getlist('allowed_pages[]')
-    admin_email_prefix = admin_email.split('@')[0]
 
-    if role in ['medecin', 'assistante']:
-        key = f"{prenom.lower()}.{nom.lower()}@{admin_email_prefix}.eml.com"
-    else:
-        key = f"{prenom.lower()}.{nom.lower()}@{admin_email_prefix}.eml-o.com"
-
-    cfg = utils.load_config()
-    role_limits_config = cfg.get('role_limits', DEFAULT_ROLE_LIMITS)
-    users_owned_by_admin = [u for u in login.load_users().values() if u.get('owner') == admin_email]
-    current_role_count = sum(1 for u in users_owned_by_admin if u.get('role') == role)
-
-    if current_role_count >= role_limits_config.get(role, {}).get('max', float('inf')):
-        return False, f"Limite de comptes atteinte pour le rôle '{role}'."
-    if not login._is_email_globally_unique(key):
-        return False, f"L'e-mail '{key}' est déjà utilisé."
+    # --- LOGIQUE DE VÉRIFICATION DE LA LIMITE GLOBALE (3 comptes max) ---
+    GLOBAL_USER_LIMIT = 3
 
     users = login.load_users()
+    users_owned_by_admin = [u for u in users.values() if u.get('owner') == admin_email]
+
+    # Compter le nombre actuel d'utilisateurs non-admin (pour éviter de compter l'admin lui-même)
+    current_non_admin_count = sum(1 for u in users_owned_by_admin if u.get('email') != admin_email and u.get('role') != 'admin')
+
+    if role != 'admin' and current_non_admin_count >= GLOBAL_USER_LIMIT:
+        return False, f"Limite globale atteinte. L'administrateur est limité à un maximum de {GLOBAL_USER_LIMIT} comptes secondaires (actuellement {current_non_admin_count})."
+    # --- FIN DE LA LOGIQUE DE VÉRIFICATION DE LA LIMITE GLOBALE ---
+
+    # --- LOGIQUE DE CRÉATION D'EMAIL BASÉE SUR L'ADMIN PRINCIPAL ---
+    admin_email_prefix = admin_email.split('@')[0]
+
+    # Structure de l'email pour les rôles secondaires (non-admin)
+    if role != 'admin':
+        # Exemple: jean.dupont@adminprefixe.eml.com
+        key = f"{prenom.lower()}.{nom.lower()}@{admin_email_prefix}.eml.com"
+    else:
+        # Si pour une raison quelconque on tentait de créer un autre admin, on donne un autre domaine
+        key = f"{prenom.lower()}.{nom.lower()}@{admin_email_prefix}.eml-admin.com"
+
+    # Vérification d'unicité de l'email
+    if not login._is_email_globally_unique(key):
+        return False, f"L'e-mail généré '{key}' existe déjà. Veuillez utiliser des noms et prénoms différents."
+
+    # --- CONSTRUCTION DES DONNÉES UTILISATEUR ---
     user_data = {
-        'nom': nom, 'prenom': prenom, 'role': role, 'password': login.hash_password(password),
-        'active': True, 'owner': admin_email, 'phone': phone, 'allowed_pages': allowed_pages
+        'nom': nom, 'prenom': prenom, 'role': role,
+        'password': login.hash_password(password),
+        'active': True, 'owner': admin_email, 'phone': phone,
+        'allowed_pages': allowed_pages
     }
-    
+
+    # Gestion des permissions spécifiques et de la liaison
     if role != 'admin' and 'accueil' not in user_data['allowed_pages']:
         user_data['allowed_pages'].append('accueil')
+
     if role == 'admin':
+        # Les admins ont toutes les permissions par défaut
         user_data['allowed_pages'] = login.ALL_BLUEPRINTS
+
     if role == 'assistante':
         user_data['linked_doctor'] = linked_doctor
     else:
         user_data.pop('linked_doctor', None)
-    
+
+    # Sauvegarde du nouvel utilisateur
     users[key] = user_data
     login.save_users(users)
 
+    # Logique optionnelle de création d'une assistante temporaire pour le médecin (conservée)
     if role == 'medecin':
+        # Cette logique est lourde et non nécessaire avec la limite globale stricte,
+        # mais je la maintiens car elle faisait partie du comportement original.
         existing_assistants = [u for u in users.values() if u.get('role') == 'assistante' and u.get('linked_doctor') == key]
-        if not existing_assistants:
+        if not existing_assistants and current_non_admin_count < GLOBAL_USER_LIMIT :
             temp_assistant_email = f"assist.{prenom.lower()}.{nom.lower()}@{admin_email_prefix}.eml.com"
             if login._is_email_globally_unique(temp_assistant_email):
-                assistant_count = sum(1 for u in users_owned_by_admin if u.get('role') == 'assistante')
-                if assistant_count < role_limits_config.get('assistante', {}).get('max', float('inf')):
+
+                # Double vérification pour s'assurer qu'ajouter l'assistante ne dépasse pas 3
+                if current_non_admin_count + 1 <= GLOBAL_USER_LIMIT:
                     users[temp_assistant_email] = {
                         'nom': 'Temporaire', 'prenom': 'Assistante', 'role': 'assistante',
                         'password': login.hash_password('password'), 'active': True, 'owner': admin_email, 'phone': '',
                         'linked_doctor': key, 'allowed_pages': ['rdv', 'routes', 'facturation', 'patient_rdv', 'accueil']
                     }
-                    login.save_users(users)
+                    login.save_users(users) # Nouvelle sauvegarde pour l'assistante
                     flash(f"Assistante temporaire ({temp_assistant_email}) créée pour {prenom} {nom}.", "info")
+                else:
+                    flash(f"ATTENTION: L'assistante par défaut n'a pas pu être créée car vous êtes à la limite de {GLOBAL_USER_LIMIT} utilisateurs.", "warning")
+
     return True, "Compte créé avec succès !"
 
 def update_existing_user(form_data: dict) -> tuple[bool, str]:
@@ -306,9 +376,11 @@ def update_existing_user(form_data: dict) -> tuple[bool, str]:
         user.pop('linked_doctor', None)
     if new_password:
         if new_password != confirm_password:
+            users[old_email] = user # Remettre l'utilisateur avec l'ancien email en cas d'erreur
+            login.save_users(users)
             return False, "Les mots de passe ne correspondent pas."
         user['password'] = login.hash_password(new_password)
-    
+
     users[new_email] = user
     login.save_users(users)
     return True, "Données utilisateur mises à jour."
@@ -337,13 +409,13 @@ def handle_backup_download() -> tuple[io.BytesIO, str]:
     if not admin_email:
         raise ValueError("Email administrateur non trouvé en session.")
     utils.set_dynamic_base_dir(admin_email)
-    
+
     # MODIFICATION CORRIGÉE : On déduit le dossier de base à partir d'un chemin connu.
     admin_data_dir = os.path.dirname(utils.EXCEL_FOLDER)
-    
+
     if not os.path.isdir(admin_data_dir):
         raise ValueError(f"Le répertoire de données '{admin_data_dir}' n'existe pas.")
-    
+
     with tempfile.TemporaryDirectory() as temp_dir:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         archive_name = f"EasyMedicaLink_Sauvegarde_{timestamp}"
@@ -365,10 +437,10 @@ def handle_backup_upload(uploaded_file) -> tuple[bool, str]:
         if not admin_email:
             return False, "Session administrateur invalide."
         utils.set_dynamic_base_dir(admin_email)
-        
+
         # MODIFICATION CORRIGÉE : On déduit le dossier de base à partir d'un chemin connu.
         admin_data_dir = os.path.dirname(utils.EXCEL_FOLDER)
-        
+
         os.makedirs(admin_data_dir, exist_ok=True)
         for item in os.listdir(admin_data_dir):
             item_path = os.path.join(admin_data_dir, item)
@@ -519,16 +591,7 @@ def handle_medication_list_upload(uploaded_file) -> tuple[bool, str]:
 @administrateur_bp.route('/', methods=['GET'])
 @admin_required
 def dashboard():
-    logged_in_full_name = None 
-    user_email = session.get('email')
-    if user_email:
-        admin_email_from_session = session.get('admin_email', 'default_admin@example.com')
-        utils.set_dynamic_base_dir(admin_email_from_session)
-        user_info = login.load_users().get(user_email)
-        if user_info:
-            logged_in_full_name = f"{user_info.get('prenom', '')} {user_info.get('nom', '')}".strip() or None
     context = get_admin_dashboard_context()
-    context['logged_in_doctor_name'] = logged_in_full_name 
     return render_template_string(administrateur_template, **context)
 
 @administrateur_bp.route('/users/<user_email>', methods=['GET'])
@@ -562,7 +625,14 @@ def toggle_user_active(user_email):
 @admin_required
 def delete_user(user_email):
     success, message = delete_existing_user(user_email)
-    flash(message, "success" if success else "danger")
+    # L'utilisateur supprimé doit être retiré du compteur global si c'était un utilisateur secondaire
+    if success and message.startswith("Utilisateur"):
+        # Relancer la fonction d'affichage pour recalculer le compteur et l'afficher correctement
+        context = get_admin_dashboard_context()
+        current_user_count = context['global_user_count']
+        flash(f"Utilisateur {user_email} supprimé. Compteurs : {current_user_count}/{context['global_user_limit']} disponibles.", "success")
+    else:
+        flash(message, "danger")
     return redirect(url_for('administrateur_bp.dashboard'))
 
 @administrateur_bp.route("/data/backup/download", methods=["GET"])
@@ -591,7 +661,7 @@ def upload_backup():
     success, message = handle_backup_upload(file)
     flash(message, "success" if success else "danger")
     return redirect(url_for("administrateur_bp.dashboard"))
-    
+
 @administrateur_bp.route("/data/image/upload", methods=["POST"])
 @admin_required
 def import_image():
@@ -1095,9 +1165,9 @@ administrateur_template = """
               <form id="mainSettingsForm" action="{{ url_for('administrateur_bp.update_general_settings') }}" method="POST">
                 <div class="row g-3">
                   <div class="col-md-6 floating-label">
-                    <input type="text" class="form-control" name="nom_clinique" id="nom_clinique_main" value="{{ config.nom_clinique | default('') }}" placeholder=" ">
-                    <label for="nom_clinique_main"><i class="fas fa-hospital me-2" style="color: #17a2b8;"></i>Nom Clinique / Cabinet/Centre Médical</label>
-                  </div>
+                                    <input type="text" class="form-control" name="nom_clinique" id="nom_clinique_main" value="{{ config.nom_clinique | default('') }}" placeholder=" " readonly>
+                                    <label for="nom_clinique_main"><i class="fas fa-hospital me-2" style="color: #17a2b8;"></i>Nom Clinique / Cabinet/Centre Médical</label>
+                                  </div>
                   <div class="col-md-6 floating-label">
                     <input type="text" class="form-control" name="doctor_name" id="doctor_name_main" value="{{ config.doctor_name | default('') }}" placeholder=" ">
                     <label for="doctor_name_main"><i class="fas fa-user-md me-2" style="color: #28a745;"></i>Nom Médecin</label>
@@ -1469,83 +1539,254 @@ administrateur_template = """
   <script src="https://cdn.datatables.net/responsive/2.4.1/js/responsive.bootstrap5.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script>
+    // ──────────────────────────────────────────────────────────────────────────
+    // 1. Fonctions d'assistance (Helpers)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Affiche une alerte SweetAlert standardisée pour les réponses fetch.
+     * @param {object} data - L'objet de réponse JSON du serveur (attend {status: '...', message: '...'})
+     * @param {boolean} reloadOnSuccess - Si la page doit être rechargée en cas de succès.
+     */
+    function showFetchAlert(data, reloadOnSuccess = true) {
+        Swal.fire({
+            icon: data.status,
+            title: data.status === "success" ? "Succès" : "Attention",
+            text: data.message,
+            timer: 2000,
+            showConfirmButton: false
+        }).then(() => {
+            if (data.status === "success" && reloadOnSuccess) {
+                // Utilise un timestamp pour forcer le rechargement depuis le serveur
+                window.location.href = window.location.pathname + "?_t=" + new Date().getTime();
+            }
+        });
+    }
+
+    /**
+     * Affiche une alerte SweetAlert pour les erreurs réseau.
+     * @param {Error} error - L'objet d'erreur.
+     */
+    function showFetchError(error) {
+        console.error("Erreur Fetch:", error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Erreur Réseau',
+            text: `Impossible de contacter le serveur. Veuillez vérifier votre connexion. (${error.message})`
+        });
+    }
+    
+    /**
+     * Méthode de repli (fallback) pour la copie dans le presse-papiers (pour HTTP).
+     */
+    function fallbackCopyTextToClipboard(text) {
+        var textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.top = 0;
+        textArea.style.left = 0;
+        textArea.style.width = "1px";
+        textArea.style.height = "1px";
+        textArea.style.padding = 0;
+        textArea.style.border = "none";
+        textArea.style.outline = "none";
+        textArea.style.boxShadow = "none";
+        textArea.style.background = "transparent";
+        
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        try {
+            var successful = document.execCommand('copy');
+            if (successful) {
+                Swal.fire({icon: 'success', title: 'Copié!', text: 'Le lien a été copié.', timer: 2000, showConfirmButton: false});
+            } else {
+                Swal.fire({icon: 'error', title: 'Oups!', text: "La copie a échoué. Veuillez copier le lien manuellement.", timer: 2500, showConfirmButton: false});
+            }
+        } catch (err) {
+            Swal.fire({icon: 'error', title: 'Erreur!', text: "Impossible de copier. Veuillez copier le lien manuellement.", timer: 2500, showConfirmButton: false});
+        }
+        
+        document.body.removeChild(textArea);
+    }
+
+    /**
+     * Copie du texte dans le presse-papiers (méthode moderne avec fallback).
+     */
+    window.copyToClipboard = function(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                Swal.fire({icon: 'success', title: 'Copié!', text: 'Le lien a été copié.', timer: 1500, showConfirmButton: false});
+            }, () => {
+                fallbackCopyTextToClipboard(text); // Fallback si permission refusée
+            });
+        } else {
+            fallbackCopyTextToClipboard(text); // Fallback pour HTTP
+        }
+    }
+
+    /**
+     * Gère l'upload de fichiers via Fetch et affiche le résultat.
+     */
+    window.ajaxFileUpload = function(formId, endpoint) {
+        fetch(endpoint, {
+            method: "POST", 
+            body: new FormData(document.getElementById(formId))
+        })
+        .then(response => response.json())
+        .then(data => showFetchAlert(data, true))
+        .catch(showFetchError);
+        return false; // Empêche la soumission traditionnelle du formulaire
+    };
+
+    /**
+     * Génère les cases à cocher pour les permissions.
+     */
+    function generateCheckboxes(containerId, currentAllowedPages = [], isCreateForm = false, userRole = null) {
+        const PERMISSION_BLUEPRINTS = ['rdv', 'routes', 'facturation', 'biologie', 'radiologie', 'pharmacie', 'comptabilite', 'statistique', 'gestion_patient', 'ia_assitant'];
+        
+        // Map pour des noms plus conviviaux
+        const DISPLAY_NAME_MAP = {
+            'routes': 'Consultations',
+            'gestion_patient': 'Patients',
+            'ia_assitant': 'Assistant IA',
+            'rdv': 'Rendez-vous'
+            // Les autres seront formatés par défaut (ex: 'Biologie')
+        };
+
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+
+        PERMISSION_BLUEPRINTS.forEach(bp_name => {
+            const div = document.createElement('div');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = 'allowed_pages[]';
+            checkbox.value = bp_name;
+            checkbox.id = `${isCreateForm ? 'create' : 'edit'}_access_${bp_name}`;
+
+            if (isCreateForm) {
+                // Logique pour le formulaire de *création*
+                let defaultChecked = ['rdv', 'routes', 'facturation', 'biologie', 'radiologie', 'pharmacie', 'comptabilite', 'statistique', 'gestion_patient', 'ia_assitant'];
+                if (userRole === 'medecin') {
+                    defaultChecked = ['rdv', 'routes', 'biologie', 'radiologie', 'statistique', 'gestion_patient', 'ia_assitant'];
+                }
+                if (defaultChecked.includes(bp_name)) checkbox.checked = true;
+            } else {
+                // Logique pour le formulaire d' *édition*
+                if (currentAllowedPages.includes(bp_name)) checkbox.checked = true;
+            }
+
+            if (userRole === 'admin') {
+                checkbox.checked = true;
+                checkbox.disabled = true;
+            }
+
+            const label = document.createElement('label');
+            label.htmlFor = checkbox.id;
+            
+            let display_name = DISPLAY_NAME_MAP[bp_name] || bp_name.replace(/_/g, ' ').replace('bp', '').trim();
+            if (!DISPLAY_NAME_MAP[bp_name]) {
+                 display_name = display_name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            }
+            
+            label.textContent = " " + display_name; // Ajoute un espace
+            div.appendChild(checkbox);
+            div.appendChild(label);
+            container.appendChild(div);
+        });
+    }
+
+    /**
+     * Supprime une période d'indisponibilité.
+     */
+    window.deleteUnavailability = function(index) {
+        Swal.fire({
+            title: 'Êtes-vous sûr?', text: "Cette action est irréversible.", icon: 'warning',
+            showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Oui, supprimer!', cancelButtonText: 'Annuler'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                const formData = new FormData();
+                formData.append('action', 'delete');
+                formData.append('index', index);
+                
+                fetch('{{ url_for('administrateur_bp.manage_unavailability') }}', {method: 'POST', body: formData})
+                .then(response => response.json())
+                .then(data => showFetchAlert(data, true))
+                .catch(showFetchError);
+            }
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 2. Initialisation (DOMContentLoaded)
+    // ──────────────────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
-      const usersTable = new DataTable('#usersTable', {
-        responsive: true,
-        lengthChange: true,
-        language: { url: "//cdn.datatables.net/plug-ins/1.13.1/i18n/fr-FR.json" }
-      });
-      const PERMISSION_BLUEPRINTS = ['rdv', 'routes', 'facturation', 'biologie', 'radiologie', 'pharmacie', 'comptabilite', 'statistique', 'gestion_patient', 'ia_assitant'];
-      function generateCheckboxes(containerId, currentAllowedPages = [], isCreateForm = false, userRole = null) {
-          const container = document.getElementById(containerId);
-          if (!container) return;
-          container.innerHTML = '';
-          PERMISSION_BLUEPRINTS.forEach(bp_name => {
-              const div = document.createElement('div');
-              const checkbox = document.createElement('input');
-              checkbox.type = 'checkbox';
-              checkbox.name = 'allowed_pages[]';
-              checkbox.value = bp_name;
-              checkbox.id = `${isCreateForm ? 'create' : 'edit'}_access_${bp_name}`;
-              if (isCreateForm) {
-                  const defaultCreateChecked = ['rdv', 'routes', 'facturation', 'biologie', 'radiologie', 'pharmacie', 'comptabilite', 'statistique', 'gestion_patient', 'ia_assitant'];
-                  if (defaultCreateChecked.includes(bp_name)) checkbox.checked = true;
-              } else {
-                  if (currentAllowedPages.includes(bp_name)) checkbox.checked = true;
-              }
-              if (userRole === 'admin') {
-                  checkbox.checked = true;
-                  checkbox.disabled = true;
-              }
-              if (isCreateForm && userRole === 'medecin') {
-                  const defaultDoctorPermissions = ['rdv', 'routes', 'biologie', 'radiologie', 'statistique', 'gestion_patient', 'ia_assitant'];
-                  checkbox.checked = defaultDoctorPermissions.includes(bp_name);
-              }
-              const label = document.createElement('label');
-              label.htmlFor = checkbox.id;
-              let display_name = bp_name.replace(/_/g, ' ').replace('bp', '').trim();
-              if (display_name === 'routes') display_name = 'Consultations';
-              else if (display_name === 'gestion patient') display_name = 'Patients';
-              else if (display_name === 'ia assitant') display_name = 'Assistant IA';
-              else display_name = display_name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-              label.textContent = display_name;
-              div.appendChild(checkbox);
-              div.appendChild(label);
-              container.appendChild(div);
+      
+      // Initialisation de la table des utilisateurs
+      try {
+          new DataTable('#usersTable', {
+              responsive: true,
+              lengthChange: true,
+              language: { url: "//cdn.datatables.net/plug-ins/1.13.1/i18n/fr-FR.json" }
           });
+      } catch (e) {
+          console.error("Impossible d'initialiser DataTable:", e);
       }
+      
+      // Génération des cases à cocher initiales pour la création
       generateCheckboxes('createAccessCheckboxes', [], true, document.getElementById('createRole').value);
-      window.copyToClipboard = function(text) {
-          navigator.clipboard.writeText(text).then(() => {
-              Swal.fire({icon: 'success', title: 'Copié!', timer: 1500, showConfirmButton: false});
-          }, () => {
-              Swal.fire({icon: 'error', title: 'Erreur!', timer: 1500, showConfirmButton: false});
-          });
-      }
+      
+      // --- Gestionnaires d'événements (Event Listeners) ---
+
+      // Toggle l'affichage du champ "Médecin lié" (Création)
       document.getElementById('createRole').addEventListener('change', function() {
-          const linkedDoctorDiv = document.getElementById('createLinkedDoctorDiv');
-          linkedDoctorDiv.style.display = this.value === 'assistante' ? 'block' : 'none';
+          document.getElementById('createLinkedDoctorDiv').style.display = this.value === 'assistante' ? 'block' : 'none';
           generateCheckboxes('createAccessCheckboxes', [], true, this.value);
       });
-      $('#usersTable tbody').on('click', '.editBtn', function(e) {
-        e.preventDefault();
-        const email = $(this).data('email');
-        fetch(`/administrateur/users/${encodeURIComponent(email)}`).then(r => r.json()).then(u => {
-            document.getElementById('editEmail').value = email;
-            document.getElementById('newEmail').value = email;
-            document.getElementById('editNom').value = u.nom;
-            document.getElementById('editPrenom').value = u.prenom;
-            document.getElementById('editPhone').value = u.phone;
-            document.getElementById('editRole').value = u.role;
-            const editLinkedDoctorDiv = document.getElementById('editLinkedDoctorDiv');
-            editLinkedDoctorDiv.style.display = u.role === 'assistante' ? 'block' : 'none';
-            if (u.role === 'assistante') {
-                document.getElementById('editLinkedDoctor').value = u.linked_doctor || '';
-            }
-            generateCheckboxes('editAccessCheckboxes', u.allowed_pages, false, u.role);
-            new bootstrap.Modal(document.getElementById('editModal')).show();
-          });
+
+      // Toggle l'affichage du champ "Médecin lié" (Édition)
+      document.getElementById('editRole').addEventListener('change', function() {
+          document.getElementById('editLinkedDoctorDiv').style.display = this.value === 'assistante' ? 'block' : 'none';
+          generateCheckboxes('editAccessCheckboxes', [], false, this.value);
       });
+
+      // Délégation d'événement pour le bouton "Modifier"
+      $('#usersTable tbody').on('click', '.editBtn', function(e) {
+          e.preventDefault();
+          const email = $(this).data('email');
+          fetch(`/administrateur/users/${encodeURIComponent(email)}`)
+              .then(response => {
+                  if (!response.ok) throw new Error('Utilisateur non trouvé');
+                  return response.json();
+              })
+              .then(u => {
+                  if (!u || Object.keys(u).length === 0) {
+                      showFetchError({message: "Les détails de l'utilisateur sont vides."});
+                      return;
+                  }
+                  document.getElementById('editEmail').value = email;
+                  document.getElementById('newEmail').value = email;
+                  document.getElementById('editNom').value = u.nom || '';
+                  document.getElementById('editPrenom').value = u.prenom || '';
+                  document.getElementById('editPhone').value = u.phone || '';
+                  document.getElementById('editRole').value = u.role || 'assistante';
+                  
+                  const editLinkedDoctorDiv = document.getElementById('editLinkedDoctorDiv');
+                  editLinkedDoctorDiv.style.display = u.role === 'assistante' ? 'block' : 'none';
+                  if (u.role === 'assistante') {
+                      document.getElementById('editLinkedDoctor').value = u.linked_doctor || '';
+                  }
+                  
+                  generateCheckboxes('editAccessCheckboxes', u.allowed_pages || [], false, u.role);
+                  new bootstrap.Modal(document.getElementById('editModal')).show();
+              })
+              .catch(showFetchError);
+      });
+
+      // Délégation d'événement pour le bouton "Supprimer"
       $('#usersTable tbody').on('click', '.btn-danger[title="Supprimer"]', function(e) {
           e.preventDefault();
           const email = $(this).data('email');
@@ -1558,73 +1799,62 @@ administrateur_template = """
               }
           });
       });
-      document.getElementById('editRole').addEventListener('change', function() {
-          const editLinkedDoctorDiv = document.getElementById('editLinkedDoctorDiv');
-          editLinkedDoctorDiv.style.display = this.value === 'assistante' ? 'block' : 'none';
-          generateCheckboxes('editAccessCheckboxes', [], false, this.value);
+
+      // Soumission du formulaire d'édition (MODAL)
+      document.getElementById('editForm').addEventListener('submit', function(e) {
+          e.preventDefault();
+          fetch(e.target.action, { method: 'POST', body: new FormData(e.target) })
+              .then(response => {
+                  // Le rechargement de la page gérera le flash message de Flask
+                  if (response.ok) {
+                      window.location.reload();
+                  } else {
+                      throw new Error('La mise à jour a échoué.');
+                  }
+              })
+              .catch(showFetchError);
       });
-      document.getElementById('editForm').addEventListener('submit',e=>{
-        e.preventDefault();
-        fetch(e.target.action,{method:'POST',body:new FormData(e.target)}).then(()=>location.reload());
-      });
+
+      // Affichage du bouton de confirmation d'upload (Backup)
       document.getElementById('backup_file_upload').addEventListener('change', function() {
           document.getElementById('upload_button').style.display = this.files.length > 0 ? 'inline-flex' : 'none';
       });
+
+      // Affichage du spinner lors de l'upload (Backup)
       document.getElementById('uploadBackupForm').addEventListener('submit', function() {
           const btn = document.getElementById('upload_button');
           btn.querySelector('#upload_button_text').style.display = 'none';
           btn.querySelector('#upload_spinner').style.display = 'inline-block';
           btn.disabled = true;
       });
-      window.ajaxFileUpload = function(formId, endpoint) {
-        fetch(endpoint, {method: "POST", body: new FormData(document.getElementById(formId))})
-        .then(response => response.json()).then(data => {
-            Swal.fire({icon: data.status, title: data.status === "success" ? "Succès" : "Attention", text: data.message, timer: 2000, showConfirmButton: false});
-            if (data.status === "success") setTimeout(() => window.location.reload(), 2100);
-        });
-        return false;
-      };
+      
+      // Soumission du formulaire d'indisponibilité
       document.getElementById('addUnavailabilityForm').addEventListener('submit', function(e) {
           e.preventDefault();
           fetch('{{ url_for('administrateur_bp.manage_unavailability') }}', {method: 'POST', body: new FormData(this)})
-          .then(response => response.json()).then(data => {
-              Swal.fire({icon: data.status, title: data.status === "success" ? "Succès" : "Attention", text: data.message, timer: 2000, showConfirmButton: false});
-              if (data.status === "success") setTimeout(() => window.location.reload(), 2100);
-          });
+              .then(response => response.json())
+              .then(data => showFetchAlert(data, true))
+              .catch(showFetchError);
       });
-      window.deleteUnavailability = function(index) {
-          Swal.fire({
-              title: 'Êtes-vous sûr?', text: "Cette action est irréversible.", icon: 'warning',
-              showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Oui, supprimer!', cancelButtonText: 'Annuler'
-          }).then((result) => {
-              if (result.isConfirmed) {
-                  const formData = new FormData();
-                  formData.append('action', 'delete');
-                  formData.append('index', index);
-                  fetch('{{ url_for('administrateur_bp.manage_unavailability') }}', {method: 'POST', body: formData})
-                  .then(response => response.json()).then(data => {
-                      Swal.fire({icon: data.status, title: data.status === "success" ? "Succès" : "Attention", text: data.message, timer: 2000, showConfirmButton: false});
-                      if (data.status === "success") setTimeout(() => window.location.reload(), 2100);
-                  });
-              }
-          });
-      }
-      document.getElementById('mainSettingsForm').addEventListener('submit',e=>{
-        e.preventDefault();
-        fetch(e.target.action,{method:'POST',body:new FormData(e.target)}).then(r=>r.json()).then(data => {
-          Swal.fire({icon:'success',title:'Succès',text:data.message}).then(() => {
-            window.location.href = "{{ url_for('administrateur_bp.dashboard') }}?_t=" + new Date().getTime();
-          });
-        });
+
+      // Soumission du formulaire des paramètres généraux
+      document.getElementById('mainSettingsForm').addEventListener('submit', function(e) {
+          e.preventDefault();
+          fetch(e.target.action, { method: 'POST', body: new FormData(e.target) })
+              .then(r => r.json())
+              .then(data => showFetchAlert(data, true))
+              .catch(showFetchError);
       });
-      document.getElementById('listsSettingsForm').addEventListener('submit',e=>{
-        e.preventDefault();
-        fetch(e.target.action,{method:'POST',body:new FormData(e.target)}).then(r=>r.json()).then(data => {
-          Swal.fire({icon:'success',title:'Succès',text:data.message}).then(() => {
-            window.location.reload();
-          });
-        });
+      
+      // Soumission du formulaire des listes (Médicaments, etc.)
+      document.getElementById('listsSettingsForm').addEventListener('submit', function(e) {
+          e.preventDefault();
+          fetch(e.target.action, { method: 'POST', body: new FormData(e.target) })
+              .then(r => r.json())
+              .then(data => showFetchAlert(data, true))
+              .catch(showFetchError);
       });
+
     });
   </script>
   {% include '_floating_assistant.html' %}

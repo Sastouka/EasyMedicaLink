@@ -27,13 +27,13 @@ from flask import (
 from flask_mail import Message
 
 import utils
-from activation import TRIAL_DAYS, get_hardware_id
+from activation import TRIAL_DAYS, get_hardware_id # get_hardware_id est conservé pour l'affichage uniquement
 
 # --- Configuration et Constantes ---
 login_bp = Blueprint("login", __name__)
 USERS_FILE: Optional[Path] = None
 PENDING_REGISTRATIONS_FILE: Optional[Path] = None
-HMAC_KEY = b"votre_cle_secrete_interne_a_remplacer" 
+HMAC_KEY = b"votre_cle_secrete_interne_a_remplacer"
 
 ALL_BLUEPRINTS = [
     'accueil', 'rdv', 'facturation', 'biologie', 'radiologie', 'pharmacie',
@@ -93,7 +93,7 @@ def send_welcome_email(recipient_email: str):
         </body>
         </html>
         """
-        
+
         msg = Message(
             subject="Bienvenue ! Votre compte EasyMedicalink est prêt.",
             sender=("EasyMedicalink", current_app.config['MAIL_USERNAME']),
@@ -120,7 +120,7 @@ def send_registration_link_email(email: str, token: str):
 
         relative_url = url_for('login.complete_registration', token=token)
         completion_url = f"{base_url}{relative_url}"
-        
+
         print(f"Génération du lien de finalisation d'enregistrement : {completion_url}")
 
         html_body = f"""
@@ -165,7 +165,7 @@ def send_password_reset_email(email: str, token: str):
 
         relative_url = url_for('login.reset_password', token=token)
         reset_url = f"{base_url}{relative_url}"
-        
+
         print(f"Génération du lien de réinitialisation ({mode}) : {reset_url}")
 
         html_body = f"""
@@ -225,6 +225,18 @@ def _load_data_from_file(file_path: Optional[Path]) -> Dict[str, Any]:
         return {}
     try:
         raw_content = file_path.read_bytes()
+        # Gérer le cas où le fichier est vide (taille 0)
+        if not raw_content:
+            return {}
+        # Gérer le cas où le fichier ne contient pas le séparateur
+        if b"\n---SIGNATURE---\n" not in raw_content:
+             print(f"AVERTISSEMENT: Le fichier {file_path} ne contient pas de signature valide. Données potentiellement corrompues ou ancien format.")
+             # Tenter de lire comme un simple JSON (si c'est un ancien format non signé)
+             try:
+                 return json.loads(raw_content.decode("utf-8"))
+             except json.JSONDecodeError:
+                 print(f"ERREUR FATALE: Impossible de décoder le fichier {file_path} comme JSON après échec de la signature.")
+                 return {} # Retourner vide en cas d'échec
         payload, signature = raw_content.rsplit(b"\n---SIGNATURE---\n", 1)
         if not hmac.compare_digest(_sign(payload), signature.decode()):
             print(f"ERREUR FATALE: L'intégrité du fichier {file_path} est compromise !")
@@ -233,6 +245,7 @@ def _load_data_from_file(file_path: Optional[Path]) -> Dict[str, Any]:
     except Exception as e:
         print(f"ERREUR lors de la lecture de {file_path}: {e}")
     return {}
+
 def _save_data_to_file(data: Dict[str, Any], file_path: Optional[Path]):
     _set_login_paths()
     if not file_path:
@@ -254,6 +267,15 @@ def save_pending_registrations(pending_data: Dict[str, Any]):
     _save_data_to_file(pending_data, PENDING_REGISTRATIONS_FILE)
 
 # --- Fonctions Utilitaires ---
+
+# Fonction interne pour l'accès aux données utilisateur par session
+def _user() -> Optional[dict]:
+    email = session.get("email")
+    if not email:
+        return None
+    return load_users().get(email)
+# --- FIN Ajout de _user() ---
+
 def lan_ip() -> str:
     ip = socket.gethostbyname(socket.gethostname())
     if ip.startswith("127."):
@@ -279,13 +301,15 @@ def login():
         email = request.form["email"].lower().strip()
         pwd_hash = hash_password(request.form["password"])
         selected_role = request.form.get("role_select")
-        
+
         found_user_info = _find_user_in_centralized_users_file(email, pwd_hash)
 
         if found_user_info:
             actual_role = found_user_info["actual_role"]
             is_pharmacy_role_match = (selected_role == 'pharmacie/magasin' and actual_role == 'pharmacie')
 
+            # 1. Vérification du rôle réel vs. rôle sélectionné (CORRIGÉ)
+            # Accepter si les rôles correspondent OU si le rôle réel est 'pharmacie' et le rôle sélectionné est 'pharmacie/magasin'
             if selected_role != actual_role and not is_pharmacy_role_match:
                 flash("Le rôle sélectionné est incorrect pour cet utilisateur.", "danger")
                 return redirect(url_for('login.login'))
@@ -294,23 +318,57 @@ def login():
                 flash("Votre compte est inactif. Veuillez contacter le propriétaire de l'application.", "danger")
                 return redirect(url_for("activation.activation"))
 
+            # L'admin_owner_email est l'e-mail du compte qui détient la licence
             session["email"] = email
             session["role"] = actual_role
             session["admin_email"] = found_user_info["admin_owner_email"]
+            # Passer nom, prénom et téléphone en session
+            session["user_nom"] = found_user_info["user_data"].get("nom", "")
+            session["user_prenom"] = found_user_info["user_data"].get("prenom", "")
+            session["user_phone"] = found_user_info["user_data"].get("phone", "")
             session.permanent = True
 
-            if session["role"] == 'admin':
-                try:
-                    hw_id = get_hardware_id()
-                    users = load_users()
-                    if email in users and users[email].get('machine_id') != hw_id:
-                        users[email]['machine_id'] = hw_id
-                        save_users(users)
-                except Exception as e:
-                    print(f"ERREUR: Impossible de sauvegarder l'ID machine pour {email}: {e}")
+            # Le bloc de mise à jour machine_id est retiré car l'activation n'est plus liée à la machine.
+            
+            # --- DÉBUT DE LA LOGIQUE D'INITIALISATION DE LA CONFIG (VOTRE DEMANDE) ---
+            # On n'exécute ceci que si l'utilisateur est l'admin principal
+            if actual_role == "admin" and email == found_user_info["admin_owner_email"]:
+                
+                # On s'assure que les chemins de utils sont définis pour cet admin
+                # C'est crucial car cette fonction s'exécute avant le before_request de app.py
+                utils.set_dynamic_base_dir(found_user_info["admin_owner_email"])
+                config = utils.load_config()
+                
+                # On vérifie si la config a déjà été initialisée.
+                # On utilise 'nom_clinique' comme indicateur.
+                config_needs_saving = False
+                admin_data = found_user_info["user_data"]
+
+                if not config.get('nom_clinique'):
+                    config['nom_clinique'] = admin_data.get('clinic', '')
+                    config_needs_saving = True # On marque pour sauvegarde
+
+                if not config.get('doctor_name'):
+                    admin_prenom = admin_data.get('prenom', '')
+                    admin_nom = admin_data.get('nom', '')
+                    config['doctor_name'] = f"{admin_prenom} {admin_nom}".strip()
+                    config_needs_saving = True
+                
+                if not config.get('location'):
+                     config['location'] = admin_data.get('address', '') # Pré-remplir l'adresse aussi
+                     config_needs_saving = True
+                
+                if config_needs_saving:
+                    try:
+                        utils.save_config(config)
+                        print(f"INFO: Configuration auto-initialisée pour {email} lors de la première connexion.")
+                    except Exception as e:
+                        print(f"ERREUR: Échec de l'auto-initialisation de la config for {email}: {e}")
+
+            # --- FIN DE LA LOGIQUE D'INITIALISATION ---
 
             return redirect(url_for("accueil.accueil"))
-        
+
         flash("Identifiants invalides.", "danger")
 
     static_folder = current_app.static_folder
@@ -328,39 +386,39 @@ def register():
         if not _is_email_globally_unique(email):
             flash(f"L'adresse e-mail '{email}' est déjà utilisée par un compte actif.", "danger")
             return redirect(url_for('login.register'))
-            
+
         pending = load_pending_registrations()
         if email in pending and datetime.now() < datetime.fromisoformat(pending[email]['expiry']):
              flash("Un lien d'enregistrement a déjà été envoyé à cette adresse. Veuillez vérifier votre boîte de réception.", "info")
              return redirect(url_for('login.login'))
-             
+
         token, expiry = generate_reset_token(), (datetime.now() + timedelta(hours=24)).isoformat()
-        
+
         pending[email] = {"token": token, "expiry": expiry}
         save_pending_registrations(pending)
         send_registration_link_email(email, token)
-        
+
         flash(f"Étape 1 terminée ! Un e-mail a été envoyé à {email}. Veuillez cliquer sur le lien dans cet e-mail pour continuer.", "success")
         return redirect(url_for('login.login'))
-        
+
     return render_template_string(register_start_template)
 
 @login_bp.route("/register/complete/<token>", methods=["GET", "POST"])
 def complete_registration(token):
     _set_login_paths()
     pending = load_pending_registrations()
-    email_found, registration_data = None, None
+    user_email, registration_data = None, None # Correction: initialiser user_email
     for email, data in pending.items():
         if data.get('token') == token:
-            email_found, registration_data = email, data
+            user_email, registration_data = email, data # Correction: assigner user_email ici
             break
-            
+
     if not registration_data:
         flash("Ce lien d'enregistrement est invalide ou a déjà été utilisé.", "danger")
         return redirect(url_for('login.register'))
 
     if datetime.now() > datetime.fromisoformat(registration_data.get('expiry')):
-        pending.pop(email_found, None)
+        pending.pop(user_email, None)
         save_pending_registrations(pending)
         flash("Votre lien d'enregistrement a expiré. Veuillez recommencer.", "danger")
         return redirect(url_for('login.register'))
@@ -368,34 +426,52 @@ def complete_registration(token):
     if request.method == "POST":
         f = request.form
         phone = f["phone"].strip()
+        # ---> AJOUT : Récupérer nom et prénom depuis le formulaire <---
+        nom_admin = f.get("nom", "").strip() # Assurez-vous que votre template a un champ name="nom"
+        prenom_admin = f.get("prenom", "").strip() # Assurez-vous que votre template a un champ name="prenom"
+        # <--- FIN AJOUT --->
 
         if f["password"] != f["confirm"]:
             flash("Les mots de passe ne correspondent pas.", "danger")
-        elif not phone.startswith('+') or len(phone) < 10:
+        elif not phone.startswith('+') or len(phone) < 10: # Ajustez la validation du téléphone si nécessaire
             flash("Le numéro de téléphone est invalide.", "danger")
+        # ---> AJOUT : Validation simple pour nom/prénom <---
+        elif not nom_admin or not prenom_admin:
+             flash("Le nom et le prénom sont requis.", "danger")
+        # <--- FIN AJOUT --->
         else:
             users = load_users()
             creation_date = f["clinic_creation_date"]
-            
-            users[email_found] = {
-                "password": hash_password(f["password"]), "role": "admin", "clinic": f["clinic"],
-                "clinic_creation_date": creation_date, "account_creation_date": date.today().isoformat(),
-                "address": f["address"], "phone": phone, "active": True, "owner": email_found,
+            GLOBAL_USER_LIMIT = 3 # Assurez-vous que cette constante est définie quelque part
+
+            users[user_email] = {
+                "password": hash_password(f["password"]),
+                "role": "admin",
+                "nom": nom_admin,         # <--- LIGNE AJOUTÉE ---
+                "prenom": prenom_admin,   # <--- LIGNE AJOUTÉE ---
+                "clinic": f["clinic"],
+                "clinic_creation_date": creation_date,
+                "account_creation_date": date.today().isoformat(),
+                "address": f["address"],
+                "phone": phone,
+                "active": True,
+                "owner": user_email,
                 "allowed_pages": ALL_BLUEPRINTS,
-                "account_limits": {"medecin":0, "assistante":0, "comptable":0, "biologiste":0, "radiologue":0, "pharmacie":0},
+                "account_limits": {"global_max_users": GLOBAL_USER_LIMIT, "current_users": 0},
                 "activation": {"plan": f"essai_{TRIAL_DAYS}jours", "activation_date": date.today().isoformat(), "activation_code": "0000-0000-0000-0000"}
             }
             save_users(users)
-            
-            pending.pop(email_found, None)
+
+            pending.pop(user_email, None)
             save_pending_registrations(pending)
-            
-            send_welcome_email(email_found)
-            
-            flash(f"Compte créé avec succès ! Un e-mail de bienvenue a été envoyé à {email_found}.", "success")
+
+            send_welcome_email(user_email)
+
+            flash(f"Compte créé avec succès ! Un e-mail de bienvenue a été envoyé à {user_email}.", "success")
             return redirect(url_for('login.login'))
-            
-    return render_template_string(register_template, email=email_found, token=token)
+
+    # Assurez-vous que user_email est passé au template si la méthode est GET
+    return render_template_string(register_template, user_email=user_email, token=token)
 
 @login_bp.route('/forgot_password', methods=['GET', 'POST'])
 def forgot_password():
@@ -437,12 +513,18 @@ def reset_password(token):
         if pwd != confirm:
             flash('Les mots de passe ne correspondent pas.', 'warning')
         else:
-            users[user_email]['password'] = hash_password(pwd)
-            users[user_email].pop('reset_token', None)
-            users[user_email].pop('reset_expiry', None)
-            save_users(users)
-            flash('Mot de passe mis à jour avec succès.', 'success')
-            return redirect(url_for('login.login'))
+            _set_login_paths()
+            users = load_users()
+            if user_email in users:
+                users[user_email]['password'] = hash_password(pwd)
+                users[user_email].pop('reset_token', None)
+                users[user_email].pop('reset_expiry', None)
+                save_users(users)
+                flash('Mot de passe mis à jour avec succès.', 'success')
+                return redirect(url_for('login.login'))
+            else:
+                flash('Utilisateur non trouvé.', 'danger')
+
     return render_template_string(reset_template)
 
 @login_bp.route('/change_password', methods=['GET', 'POST'])
@@ -618,7 +700,7 @@ login_template = f'''
                 <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon">
                 <h3 class='card-title fw-bold'><i class='fas fa-user-lock me-2'></i>Connexion</h3>
             </div>
-            
+
             <div id="pwa-install-banner" class="alert alert-primary small mt-3 d-none">
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1">
@@ -701,7 +783,7 @@ login_template = f'''
                     </div>
                 </div>
             </div>
-            
+
             {{% if win64_filename or win32_filename %}}
             <div class='text-center mt-4 pt-4 border-top'>
                 <h5 class='fw-bold card-title'><i class="fab fa-windows"></i> Version Locale</h5>
@@ -817,8 +899,20 @@ register_template = f'''
       <form id="registerForm" method="POST" class="mt-3">
         <div class="mb-3">
           <label class="form-label small"><i class="fas fa-envelope me-2"></i>Email (vérifié)</label>
-          <input type="email" name="email" class="form-control" value="{{{{ email }}}}" readonly>
+          <input type="email" name="email" class="form-control" value="{{{{ user_email }}}}" readonly>
         </div>
+        {{# #}}
+        <div class="row g-2 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label small"><i class="fas fa-user me-2"></i>Prénom</label>
+                    <input type="text" name="prenom" class="form-control" required>
+                </div>
+          <div class="col-md-6">
+            <label class="form-label small"><i class="fas fa-user me-2"></i>Nom</label>
+            <input type="text" name="nom" class="form-control" required>
+          </div>
+        </div>
+        {{# #}}
         <div class="row g-2 mb-3">
           <div class="col-md-6">
             <label class="form-label small"><i class="fas fa-key me-2"></i>Mot de passe</label>
@@ -845,7 +939,7 @@ register_template = f'''
         </div>
         <div class="mb-4">
           <label class="form-label small"><i class="fab fa-whatsapp me-2"></i>Téléphone</label>
-          <input type="tel" name="phone" class="form-control" placeholder="ex: +212XXXXXXXXX" required pattern="^\\+\\d{{9,}}$">
+          <input type="tel" name="phone" class="form-control" placeholder="ex: +212XXXXXXXXX" required pattern="^\+\d{{9,}}$">
         </div>
         <button type="submit" class="btn btn-gradient btn-lg w-100">Créer mon compte</button>
       </form>
@@ -914,3 +1008,4 @@ forgot_template = f'''
 </body>
 </html>
 '''
+
