@@ -309,6 +309,7 @@ def edit_admin():
 
 @developpeur_bp.route("/change_plan", methods=["POST"])
 def change_admin_plan():
+    """Mise à jour du plan pour UN SEUL admin (modification individuelle)."""
     if (r := _dev_only()): return r
     f = request.form
     admin_email, new_plan = f.get("admin_email"), f.get("plan")
@@ -337,6 +338,99 @@ def change_admin_plan():
     login_mod.save_users(users)
     flash(f"Plan pour {admin_email} mis à jour. Nouvelle clé : {new_key}", "success")
     return redirect(url_for(".dashboard"))
+
+@developpeur_bp.route("/batch_change_plan", methods=["POST"])
+def batch_change_plan():
+    """Mise à jour du plan pour TOUS les admins (modification collective)."""
+    if (r := _dev_only()): return r
+    
+    f = request.form
+    new_plan = f.get("plan")
+    date_str = f.get("activation_date")
+
+    try: 
+        ref_date = date.fromisoformat(date_str)
+    except (ValueError, TypeError):
+        flash("Date d'activation invalide.", "danger")
+        return redirect(url_for(".dashboard"))
+
+    if not new_plan:
+        flash("Aucun plan sélectionné.", "danger")
+        return redirect(url_for(".dashboard"))
+
+    users = login_mod.load_users()
+    updated_count = 0
+    
+    # Itération sur une copie des clés pour modifier le dictionnaire
+    for admin_email, user_data in users.items():
+        if user_data.get("role") == "admin":
+            # Générer une nouvelle clé pour chaque admin basée sur son email
+            new_key = activation.generate_activation_key_for_user(admin_email, new_plan, ref=ref_date)
+            
+            user_data.setdefault('activation', {})
+            user_data["activation"].update({
+                "plan": new_plan,
+                "activation_date": ref_date.isoformat(),
+                "activation_code": new_key
+            })
+            updated_count += 1
+    
+    if updated_count > 0:
+        login_mod.save_users(users)
+        flash(f"{updated_count} compte(s) admin mis à jour vers le plan '{new_plan}'.", "success")
+    else:
+        flash("Aucun compte admin trouvé à mettre à jour.", "info")
+
+    return redirect(url_for(".dashboard"))
+
+@developpeur_bp.route("/selective_batch_change_plan", methods=["POST"])
+def selective_batch_change_plan():
+    """Mise à jour du plan pour une SÉLECTION d'admins."""
+    if (r := _dev_only()): return r
+    
+    f = request.form
+    new_plan = f.get("plan")
+    date_str = f.get("activation_date")
+    # Récupère la liste des emails envoyés par le formulaire
+    admin_emails = f.getlist("admin_emails[]")
+
+    if not admin_emails:
+        flash("Aucun compte n'a été sélectionné.", "warning")
+        return redirect(url_for(".dashboard"))
+
+    try: 
+        ref_date = date.fromisoformat(date_str)
+    except (ValueError, TypeError):
+        flash("Date d'activation invalide.", "danger")
+        return redirect(url_for(".dashboard"))
+
+    if not new_plan:
+        flash("Aucun plan sélectionné.", "danger")
+        return redirect(url_for(".dashboard"))
+
+    users = login_mod.load_users()
+    updated_count = 0
+    
+    for admin_email in admin_emails:
+        if admin_email in users and users[admin_email].get("role") == "admin":
+            new_key = activation.generate_activation_key_for_user(admin_email, new_plan, ref=ref_date)
+            
+            users[admin_email].setdefault('activation', {})
+            users[admin_email]["activation"].update({
+                "plan": new_plan,
+                "activation_date": ref_date.isoformat(),
+                "activation_code": new_key
+            })
+            updated_count += 1
+    
+    if updated_count > 0:
+        login_mod.save_users(users)
+        flash(f"{updated_count} compte(s) admin sélectionnés ont été mis à jour vers le plan '{new_plan}'.", "success")
+    else:
+        flash("Aucun des comptes sélectionnés n'a pu être mis à jour (non trouvés ou pas admin).", "warning")
+
+    return redirect(url_for(".dashboard"))
+
 
 @developpeur_bp.route("/toggle_active/<admin_email>")
 def toggle_active(admin_email):
@@ -622,10 +716,129 @@ DASH_HTML = """
   <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fas fa-key section-icon'></i>Générer une clé de licence</h5><div class='card-body'><form class='row gy-2 gx-3 align-items-end' method='POST' action='{{ url_for("developpeur_bp.gen_custom") }}'><div class='col-12 col-md-3'><label class='form-label fw-semibold'><i class='fas fa-envelope me-1'></i>Email Admin (ID licence)</label><input name='admin_email' type='email' class='form-control' placeholder='admin@example.com' required></div><div class='col-12 col-md-2'><label class='form-label fw-semibold'><i class='fas fa-user me-1'></i>Nom</label><input name='nom' class='form-control' required></div><div class='col-12 col-md-2'><label class='form-label fw-semibold'><i class='fas fa-user me-1'></i>Prénom</label><input name='prenom' class='form-control' required></div><div class='col-12 col-md-3'><label class='form-label fw-semibold'><i class='fas fa-calendar-alt me-1'></i>Date d'activation</label><input name='activation_date' type='date' class='form-control' value='{{ today_date }}' required></div><div class='col-12 col-md-2'><label class='form-label fw-semibold'><i class='fas fa-file-signature me-1'></i>Plan</label><select name='plan' class='form-select'>{% for c,l in plans %}<option value='{{c}}'>{{l}}</option>{% endfor %}</select></div><div class='col-12 d-grid mt-3'><button class='btn btn-grad'><i class='fas fa-magic me-1'></i>Générer la Clé</button></div>{% if key %}<div class='col-12'><div class='alert alert-info mt-3 shadow-sm'><i class='fas fa-check-circle me-2'></i><strong>Clé&nbsp;:</strong> {{key}}</div></div>{% endif %}</form></div></div>
   <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fas fa-server section-icon'></i>Clés générées (basées sur Email Admin)</h5><div class='card-body'><div class="table-responsive"><table id='tblKeys' class='table table-striped table-hover rounded overflow-hidden'><thead><tr><th>Email Admin</th><th>Propriétaire (Nom)</th><th>Plan</th><th>Clé</th></tr></thead><tbody>{% for mid,info in machines.items() %}<tr><td class='fw-semibold'>{{mid}}</td><td>{{info.prenom}}&nbsp;{{info.nom}}</td><td>{{info.plan}}</td><td class='text-break'>{{info.key}}</td></tr>{% endfor %}</tbody></table></div></div></div>
   <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fas fa-user-plus section-icon'></i>Créer un compte admin</h5><div class='card-body'><form class='row gy-2 gx-3 align-items-end' method='POST' action='{{ url_for("developpeur_bp.create_admin") }}'><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-envelope me-1'></i>Email</label><input name='email' type='email' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-key me-1'></i>Mot de passe</label><input name='password' type='password' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-key me-1'></i>Confirmer</label><input name='confirm' type='password' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-hospital me-1'></i>Clinique</label><input name='clinic' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-calendar-alt me-1'></i>Date création (Clinique)</label><input name='clinic_creation_date' type='date' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-map-marker-alt me-1'></i>Adresse</label><input name='address' class='form-control' required></div><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-phone me-1'></i>Téléphone</label><input name='phone' type='tel' class='form-control' placeholder='Numéro de téléphone' required></div><input type='hidden' name='role' value='admin'><div class='col-12 d-grid mt-2'><button class='btn btn-grad'><i class='fas fa-user-plus me-1'></i>Créer</button></div></form></div></div>
-  <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fas fa-users section-icon'></i>Comptes admin</h5><div class="card-body"><div class="table-responsive"><table id='tblAdmin' class='table table-striped table-hover rounded overflow-hidden'><thead><tr><th>Email</th><th>Clinique</th><th>Téléphone</th><th>Adresse</th><th>Date création (Clinique)</th><th>Date création (Compte)</th><th>Plan</th><th>Actif</th><th>Actions</th></tr></thead><tbody>
-            {% for e,u in admins.items() %}<tr><td>{{e}}</td><td>{{u.clinic}}</td><td>{{u.phone}}</td><td>{{u.address}}</td><td>{{u.clinic_creation_date}}</td><td>{{u.account_creation_date}}</td><td><span class="badge bg-primary">{{ u.get("activation", {}).get("plan", "N/A") }}</span></td><td><span class='badge {{'bg-success' if u.active else 'bg-secondary'}}'>{{'Oui' if u.active else 'Non'}}</span></td><td class='text-nowrap'>{% if u.phone %}<a class='btn btn-sm btn-success me-1' title='Contacter via WhatsApp' href='https://wa.me/{{ u.phone | replace("+", "") }}' target='_blank'><i class='fab fa-whatsapp'></i></a>{% endif %}<button class='btn btn-sm btn-info me-1 edit-admin-btn' title='Modifier' data-bs-toggle='modal' data-bs-target='#editAdminModal' data-email='{{ e }}' data-clinic='{{ u.clinic }}' data-clinic_creation_date='{{ u.clinic_creation_date }}' data-address='{{ u.address }}' data-phone='{{ u.phone }}' data-active='{{ u.get('active', False) | tojson }}'><i class='fas fa-pen'></i></button><button class='btn btn-sm btn-warning me-1 change-plan-btn' title='Modifier Plan' data-bs-toggle='modal' data-bs-target='#changePlanModal' data-email='{{ e }}' data-plan='{{ u.get("activation", {}).get("plan", "") }}'><i class='fas fa-file-invoice-dollar'></i></button><a class='btn btn-sm btn-outline-secondary' title='Activer/Désactiver' href='{{ url_for('developpeur_bp.toggle_active',admin_email=e) }}'><i class='fas fa-power-off'></i></a><a class='btn btn-sm btn-outline-danger' title='Supprimer' href='{{ url_for('developpeur_bp.delete_admin',admin_email=e) }}'><i class='fas fa-trash'></i></a></td></tr>{% endfor %}
-          </tbody></table></div></div></div>
-
+  
+  <div class='card shadow-sm mb-4'>
+    <h5 class='card-header'><i class='fas fa-users section-icon'></i>Comptes admin</h5>
+    <div class="card-body">
+      <div class="mb-3 d-flex justify-content-end gap-2">
+        <button
+          class="btn btn-info"
+          id="selectiveBatchBtn"
+          data-bs-toggle="modal"
+          data-bs-target="#selectiveBatchChangePlanModal"
+          disabled
+        >
+          <i class="fas fa-check-square me-2"></i>Mettre à jour la sélection (0)
+        </button>
+        <button
+          class="btn btn-warning"
+          data-bs-toggle="modal"
+          data-bs-target="#batchChangePlanModal"
+        >
+          <i class="fas fa-users-cog me-2"></i>Mettre à jour tous les Admins
+        </button>
+      </div>
+      <div class="table-responsive">
+        <table id="tblAdmin" class="table table-striped table-hover rounded overflow-hidden">
+          <thead>
+            <tr>
+              <th class="text-center" style="width: 10px">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="selectAllChecks"
+                  title="Tout sélectionner"
+                />
+              </th>
+              <th>Email</th>
+              <th>Clinique</th>
+              <th>Téléphone</th>
+              <th>Adresse</th>
+              <th>Date création (Clinique)</th>
+              <th>Date création (Compte)</th>
+              <th>Plan</th>
+              <th>Actif</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e,u in admins.items() %}
+            <tr>
+              <td class="text-center">
+                <input
+                  class="form-check-input admin-check"
+                  type="checkbox"
+                  value="{{ e }}"
+                />
+              </td>
+              <td>{{e}}</td>
+              <td>{{u.clinic}}</td>
+              <td>{{u.phone}}</td>
+              <td>{{u.address}}</td>
+              <td>{{u.clinic_creation_date}}</td>
+              <td>{{u.account_creation_date}}</td>
+              <td>
+                <span class="badge bg-primary"
+                  >{{ u.get("activation", {}).get("plan", "N/A") }}</span
+                >
+              </td>
+              <td>
+                <span class="badge {{'bg-success' if u.active else 'bg-secondary'}}"
+                  >{{'Oui' if u.active else 'Non'}}</span
+                >
+              </td>
+              <td class="text-nowrap">
+                {% if u.phone %}<a
+                  class="btn btn-sm btn-success me-1"
+                  title="Contacter via WhatsApp"
+                  href="https://wa.me/{{ u.phone | replace('+', '') }}"
+                  target="_blank"
+                  ><i class="fab fa-whatsapp"></i></a
+                >{% endif %}
+                <button
+                  class="btn btn-sm btn-info me-1 edit-admin-btn"
+                  title="Modifier"
+                  data-bs-toggle="modal"
+                  data-bs-target="#editAdminModal"
+                  data-email="{{ e }}"
+                  data-clinic="{{ u.clinic }}"
+                  data-clinic_creation_date="{{ u.clinic_creation_date }}"
+                  data-address="{{ u.address }}"
+                  data-phone="{{ u.phone }}"
+                  data-active="{{ u.get('active', False) | tojson }}"
+                >
+                  <i class="fas fa-pen"></i>
+                </button>
+                <button
+                  class="btn btn-sm btn-warning me-1 change-plan-btn"
+                  title="Modifier Plan"
+                  data-bs-toggle="modal"
+                  data-bs-target="#changePlanModal"
+                  data-email="{{ e }}"
+                  data-plan="{{ u.get('activation', {}).get('plan', '') }}"
+                >
+                  <i class="fas fa-file-invoice-dollar"></i>
+                </button>
+                <a
+                  class="btn btn-sm btn-outline-secondary"
+                  title="Activer/Désactiver"
+                  href="{{ url_for('developpeur_bp.toggle_active',admin_email=e) }}"
+                  ><i class="fas fa-power-off"></i
+                ></a>
+                <a
+                  class="btn btn-sm btn-outline-danger"
+                  title="Supprimer"
+                  href="{{ url_for('developpeur_bp.delete_admin',admin_email=e) }}"
+                  ><i class="fas fa-trash"></i
+                ></a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
   <div class='card shadow-sm mb-4'><h5 class='card-header'><i class='fab fa-paypal section-icon'></i>Générer un Lien de Paiement</h5><div class='card-body'><form class='row gy-2 gx-3 align-items-end' method='POST' action='{{ url_for("developpeur_bp.generer_paiement") }}'><div class='col-12 col-md-4'><label class='form-label fw-semibold'><i class='fas fa-dollar-sign me-1'></i>Montant (USD)</label><input name='amount' type='number' step='0.01' class='form-control' placeholder='Ex: 25.50' required></div><div class='col-12 col-md-8'><label class='form-label fw-semibold'><i class='fas fa-info-circle me-1'></i>Description (pour le client)</label><input name='description' type='text' class='form-control' placeholder='Ex: Frais de configuration' required></div><div class='col-12 d-grid mt-3'><button class='btn btn-grad'><i class='fas fa-link me-1'></i>Générer le Lien de Paiement</button></div></form></div></div>
 
   {% if payment_link %}
@@ -637,7 +850,102 @@ DASH_HTML = """
 </div>
 
 <div class="modal fade" id="editAdminModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Modifier le compte Admin</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><form id="editAdminForm" method="POST" action=""><div class="modal-body"><input type="hidden" name="original_email" id="edit_original_email"><div class="mb-3"><label class="form-label">Email</label><input type="email" class="form-control" id="edit_email" name="email" required></div><div class="mb-3"><label class="form-label">Nom de la clinique</label><input type="text" class="form-control" id="edit_clinic" name="clinic" required></div><div class="mb-3"><label class="form-label">Date de création (Clinique)</label><input type="date" class="form-control" id="edit_clinic_creation_date" name="clinic_creation_date" required></div><div class="mb-3"><label class="form-label">Adresse</label><input type="text" class="form-control" id="edit_address" name="address" required></div><div class="mb-3"><label class="form-label">Téléphone</label><input type="tel" class="form-control" id="edit_phone" name="phone" placeholder='Numéro de téléphone' required></div><div class="mb-3"><label class="form-label">Nouveau mot de passe (laisser vide si inchangé)</label><input type="password" class="form-control" id="edit_password" name="password"></div><div class="mb-3"><label class="form-label">Confirmer le nouveau mot de passe</label><input type="password" class="form-control" id="edit_confirm_password" name="confirm_password"></div><div class="form-check"><input class="form-check-input" type="checkbox" id="edit_active" name="active"><label class="form-check-label" for="edit_active">Actif</label></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div></form></div></div></div>
-<div class="modal fade" id="changePlanModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Modifier Plan de Licence</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><form method="POST" action="{{ url_for('developpeur_bp.change_admin_plan') }}"><div class="modal-body"><input type="hidden" name="admin_email" id="plan_admin_email"><p>Compte : <strong id="plan_admin_email_display"></strong></p><div class="mb-3"><label class="form-label">ID Machine Client (Non utilisé pour la clé)</label><input type="text" class="form-control mono" id="plan_machine_id" name="machine_id" disabled value="Clé non liée à la machine" placeholder="ID non utilisé"></div><div class="mb-3"><label class="form-label">Nouveau Plan</label><select name="plan" id="plan_select" class="form-select">{% for value, label in plans %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div><div class="mb-3"><label class="form-label">Date d'activation</label><input type="date" class="form-control" id="plan_activation_date" name="activation_date" required></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button><button type="submit" class="btn btn-primary">Mettre à jour</button></div></form></div></div></div>
+
+<div class="modal fade" id="changePlanModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Modifier Plan de Licence (Individuel)</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><form method="POST" action="{{ url_for('developpeur_bp.change_admin_plan') }}"><div class="modal-body"><input type="hidden" name="admin_email" id="plan_admin_email"><p>Compte : <strong id="plan_admin_email_display"></strong></p><div class="mb-3"><label class="form-label">ID Machine Client (Non utilisé pour la clé)</label><input type="text" class="form-control mono" id="plan_machine_id" name="machine_id" disabled value="Clé non liée à la machine" placeholder="ID non utilisé"></div><div class="mb-3"><label class="form-label">Nouveau Plan</label><select name="plan" id="plan_select" class="form-select">{% for value, label in plans %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div><div class="mb-3"><label class="form-label">Date d'activation</label><input type="date" class="form-control" id="plan_activation_date" name="activation_date" required></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button><button type="submit" class="btn btn-primary">Mettre à jour</button></div></form></div></div></div>
+
+<div class="modal fade" id="batchChangePlanModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Mise à Jour Collective des Plans</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('developpeur_bp.batch_change_plan') }}" 
+                  onsubmit="return confirm('ATTENTION : Vous allez modifier le plan de TOUS les comptes admin. Êtes-vous certain ?');">
+                <div class="modal-body">
+                    <p class="text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Cette action affectera <strong>tous</strong> les comptes admin existants.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Nouveau Plan pour tous</label>
+                        <select name="plan" class="form-select" required>
+                            <option value="" disabled selected>-- Choisir un plan --</option>
+                            {% for value, label in plans %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date d'activation</label>
+                        <input type="date" class="form-control" name="activation_date" value="{{ today_date }}" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-danger">Appliquer à Tous</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="selectiveBatchChangePlanModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Mise à Jour Groupée (Sélection)</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+      <form
+        method="POST"
+        action="{{ url_for('developpeur_bp.selective_batch_change_plan') }}"
+        onsubmit="return confirm('Vous allez modifier le plan des comptes sélectionnés. Continuer ?');"
+      >
+        <div class="modal-body">
+          <p>
+            Cette action s'appliquera
+            <strong
+              ><span id="selective-count-display">0</span> compte(s)
+              sélectionné(s)</strong
+            >.
+          </p>
+
+          <div id="selective-admin-list"></div>
+
+          <div class="mb-3">
+            <label class="form-label">Nouveau Plan</label>
+            <select name="plan" class="form-select" required>
+              <option value="" disabled selected>-- Choisir un plan --</option>
+              {% for value, label in plans %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Date d'activation</label>
+            <input
+              type="date"
+              class="form-control"
+              name="activation_date"
+              value="{{ today_date }}"
+              required
+            />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            Annuler
+          </button>
+          <button type="submit" class="btn btn-primary">
+            Appliquer à la Sélection
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script><script src='https://code.jquery.com/jquery-3.6.0.min.js'></script><script src='https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js'></script><script src='https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js'></script>
 <script>
 function copyLink() {
@@ -648,10 +956,97 @@ function copyLink() {
   Swal.fire({icon:'success',title:'Copié !',text:'Le lien a été copié dans le presse-papiers.',timer:1500,showConfirmButton:false});
 }
 $(function(){
-  $('#tblKeys, #tblAdmin').DataTable({lengthChange:false,language:{url:'//cdn.datatables.net/plug-ins/1.13.1/i18n/fr-FR.json'}});
+  $('#tblKeys').DataTable({lengthChange:false,language:{url:'//cdn.datatables.net/plug-ins/1.13.1/i18n/fr-FR.json'}});
+  
+  // Désactiver le tri sur la première colonne (checkbox) pour tblAdmin
+  $('#tblAdmin').DataTable({
+      lengthChange: false,
+      language: { url: '//cdn.datatables.net/plug-ins/1.13.1/i18n/fr-FR.json' },
+      "columnDefs": [
+          { "orderable": false, "targets": 0 }
+      ]
+  });
+
   $('#editAdminModal').on('show.bs.modal',function(e){const t=$(e.relatedTarget),a=t.data("email"),l=t.data("clinic"),i=t.data("clinic_creation_date"),d=t.data("address"),n=t.data("phone"),s=t.data("active"),o=$(this);o.find("#edit_original_email").val(a),o.find("#edit_email").val(a),o.find("#edit_clinic").val(l),o.find("#edit_clinic_creation_date").val(i),o.find("#edit_address").val(d),o.find("#edit_phone").val(n),o.find("#edit_active").prop("checked",s),o.find("#editAdminForm").attr("action","{{ url_for('developpeur_bp.edit_admin') }}")});
   $('#editAdminForm').on('submit',function(e){e.preventDefault();const t=$(this),a=t.serialize(),l=$("#edit_password").val(),i=$("#edit_confirm_password").val();if(l&&l!==i)return void Swal.fire({icon:"error",title:"Erreur",text:"Les mots de passe ne correspondent pas."});fetch(t.attr("action"),{method:"POST",body:new URLSearchParams(a),headers:{"Content-Type":"application/x-www-form-urlencoded"}}).then(e=>e.json()).then(e=>{"success"===e.status?Swal.fire({icon:"success",title:"Succès",text:e.message}).then(()=>{location.reload()}):Swal.fire({icon:"error",title:"Erreur",text:e.message})}).catch(e=>{console.error("Error:",e),Swal.fire({icon:"error",title:"Erreur réseau",text:"Impossible de se connecter."})})});
+  
+  // JS pour la modale individuelle (INCHANGÉ)
   $('#changePlanModal').on('show.bs.modal',function(e){const t=$(e.relatedTarget),a=$(this),l=t.data("email"),d=(new Date).toISOString().split("T")[0];a.find("#plan_admin_email").val(l),a.find("#plan_admin_email_display").text(l),a.find("#plan_select").val(t.data("plan")),a.find("#plan_activation_date").val(d)});
+
+  // --- NOUVEAU JS : GESTION DE LA SÉLECTION GROUPÉE ---
+    const $selectAll = $("#selectAllChecks");
+    // Important : Cibler les checkboxes DANS le corps de la table pour éviter les problèmes avec DataTables
+    const $adminChecks = $("#tblAdmin tbody").find(".admin-check"); 
+    const $selectiveBtn = $("#selectiveBatchBtn");
+
+    function updateSelectiveButton() {
+      // Compter seulement les cases cochées DANS le corps de la table
+      const count = $("#tblAdmin tbody").find(".admin-check:checked").length;
+      
+      if (count > 0) {
+        $selectiveBtn.prop("disabled", false);
+        $selectiveBtn.html(
+          `<i class="fas fa-check-square me-2"></i>Mettre à jour la sélection (${count})`
+        );
+      } else {
+        $selectiveBtn.prop("disabled", true);
+        $selectiveBtn.html(
+          `<i class="fas fa-check-square me-2"></i>Mettre à jour la sélection (0)`
+        );
+      }
+
+      // Mettre à jour la case "Tout sélectionner"
+      const totalChecks = $adminChecks.length;
+      if (totalChecks > 0 && count === totalChecks) {
+        $selectAll.prop("checked", true);
+      } else {
+        $selectAll.prop("checked", false);
+      }
+    }
+
+    // Clic sur une case individuelle (délégation d'événement pour DataTables)
+    $("#tblAdmin tbody").on("change", ".admin-check", function () {
+      updateSelectiveButton();
+    });
+
+    // Clic sur "Tout sélectionner"
+    $selectAll.on("change", function () {
+      const isChecked = $(this).prop("checked");
+      // Cocher/décocher toutes les cases DANS le corps de la table
+      $("#tblAdmin tbody").find(".admin-check").prop("checked", isChecked);
+      updateSelectiveButton();
+    });
+
+    // Au moment d'ouvrir la modale de sélection
+    $("#selectiveBatchChangePlanModal").on("show.bs.modal", function (e) {
+      const selectedEmails = [];
+      // Récupérer les emails cochés DANS le corps de la table
+      $("#tblAdmin tbody").find(".admin-check:checked").each(function () {
+        selectedEmails.push($(this).val());
+      });
+
+      const $listContainer = $(this).find("#selective-admin-list");
+      const $countDisplay = $(this).find("#selective-count-display");
+
+      $listContainer.empty(); // Vider les anciens inputs
+      $countDisplay.text(selectedEmails.length);
+
+      // Injecter les emails sélectionnés comme inputs cachés dans le formulaire
+      selectedEmails.forEach(function (email) {
+        $listContainer.append(
+          `<input type="hidden" name="admin_emails[]" value="${email}">`
+        );
+      });
+    });
+
+    // Gérer la pagination DataTables (pour que la sélection persiste visuellement)
+    // C'est un problème complexe. Pour l'instant, la sélection est réinitialisée à chaque changement de page.
+    // Le JS actuel fonctionne sur la PAGE VISIBLE. 
+    // Pour une sélection persistante, il faudrait stocker les IDs dans un array JS global.
+    // Pour cette version, nous gardons la logique simple : la sélection fonctionne sur la page courante.
+
+    // Initialiser le bouton au chargement
+    updateSelectiveButton();
 });
 </script></body></html>
 """
@@ -680,9 +1075,7 @@ FIREBASE_BROWSER_HTML = """
       </nav>
 
       <form id="uploadForm" action="{{ url_for('.firebase_upload_blob') }}" method="POST" enctype="multipart/form-data" class="row mb-4 gx-2 gy-2">
-        {# ---> CORRECTION APPLIQUÉE ICI <--- #}
         <input type="hidden" name="path" value="{{ current_path }}">
-        {# ---> FIN DE LA CORRECTION <--- #}
         <div class="col-md-9">
           <input type="file" class="form-control" name="uploaded_file" id="uploaded_file" required>
         </div>
