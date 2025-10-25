@@ -16,6 +16,12 @@ import io
 import base64
 from werkzeug.utils import secure_filename
 
+# NOUVELLE DÉPENDANCE REQUISE pour l'export Excel
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
 # ───────── 1. Imports internes ─────────
 import login as login_mod
 import activation
@@ -455,6 +461,68 @@ def delete_admin(admin_email):
 
     return redirect(url_for(".dashboard"))
 
+# NOUVELLE ROUTE : Export Excel
+@developpeur_bp.route("/export_admins_excel")
+def export_admins_excel():
+    if (r := _dev_only()): return r
+    
+    if pd is None:
+        flash("La bibliothèque 'pandas' est requise pour l'export Excel. Veuillez l'installer (`pip install pandas openpyxl`).", "danger")
+        return redirect(url_for(".dashboard"))
+            
+    try:
+        all_users = login_mod.load_users()
+        admin_list = []
+        
+        for email, data in all_users.items():
+            if data.get("role") == "admin":
+                # Utiliser la date de création du compte ou la date de création de la clinique comme fallback
+                clinic_date = data.get("clinic_creation_date", data.get("creation_date", "N/A"))
+                account_date = data.get("account_creation_date", data.get("creation_date", "N/A"))
+
+                export_data = {
+                    "Email": email,
+                    "Clinique": data.get("clinic", "N/A"),
+                    "Téléphone": data.get("phone", "N/A"),
+                    "Adresse": data.get("address", "N/A"),
+                    "Date Création Clinique": clinic_date,
+                    "Date Création Compte": account_date,
+                    "Plan": data.get("activation", {}).get("plan", "N/A"),
+                    "Actif": "Oui" if data.get("active", True) else "Non"
+                }
+                admin_list.append(export_data)
+        
+        if not admin_list:
+            flash("Aucun compte admin à exporter.", "info")
+            return redirect(url_for(".dashboard"))
+        
+        df = pd.DataFrame(admin_list)
+        
+        # Créer un buffer en mémoire
+        output = io.BytesIO()
+        # Écrire le DataFrame dans le buffer au format Excel
+        # openpyxl est requis par pandas pour .to_excel
+        df.to_excel(output, index=False, sheet_name='Comptes Admin')
+        output.seek(0)
+        
+        filename = f"EasyMedicalink_Admins_{date.today().isoformat()}.xlsx"
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+    except ImportError:
+        # Attrape l'erreur si openpyxl n'est pas installé
+        flash("La bibliothèque 'openpyxl' est requise par pandas pour l'export Excel. Veuillez l'installer (`pip install openpyxl`).", "danger")
+        return redirect(url_for(".dashboard"))
+    except Exception as e:
+        print(f"ERROR (export_admins_excel): {e}")
+        flash(f"Erreur lors de l'exportation Excel : {e}", "danger")
+        return redirect(url_for(".dashboard"))
+
+
 @developpeur_bp.route("/data/medicalink/export")
 def export_medicalink_data():
     if (r := _dev_only()): return r
@@ -721,6 +789,9 @@ DASH_HTML = """
     <h5 class='card-header'><i class='fas fa-users section-icon'></i>Comptes admin</h5>
     <div class="card-body">
       <div class="mb-3 d-flex justify-content-end gap-2">
+        <a href="{{ url_for('developpeur_bp.export_admins_excel') }}" class="btn btn-success">
+            <i class="fas fa-file-excel me-2"></i>Exporter (Excel)
+        </a>
         <button
           class="btn btn-info"
           id="selectiveBatchBtn"
@@ -964,7 +1035,8 @@ $(function(){
       language: { url: '//cdn.datatables.net/plug-ins/1.13.1/i18n/fr-FR.json' },
       "columnDefs": [
           { "orderable": false, "targets": 0 }
-      ]
+      ],
+      "order": [[ 1, "asc" ]] // Trier par email (colonne 1) par défaut
   });
 
   $('#editAdminModal').on('show.bs.modal',function(e){const t=$(e.relatedTarget),a=t.data("email"),l=t.data("clinic"),i=t.data("clinic_creation_date"),d=t.data("address"),n=t.data("phone"),s=t.data("active"),o=$(this);o.find("#edit_original_email").val(a),o.find("#edit_email").val(a),o.find("#edit_clinic").val(l),o.find("#edit_clinic_creation_date").val(i),o.find("#edit_address").val(d),o.find("#edit_phone").val(n),o.find("#edit_active").prop("checked",s),o.find("#editAdminForm").attr("action","{{ url_for('developpeur_bp.edit_admin') }}")});
@@ -975,13 +1047,11 @@ $(function(){
 
   // --- NOUVEAU JS : GESTION DE LA SÉLECTION GROUPÉE ---
     const $selectAll = $("#selectAllChecks");
-    // Important : Cibler les checkboxes DANS le corps de la table pour éviter les problèmes avec DataTables
-    const $adminChecks = $("#tblAdmin tbody").find(".admin-check"); 
     const $selectiveBtn = $("#selectiveBatchBtn");
 
     function updateSelectiveButton() {
       // Compter seulement les cases cochées DANS le corps de la table
-      const count = $("#tblAdmin tbody").find(".admin-check:checked").length;
+      const count = $("#tblAdmin tbody .admin-check:checked").length;
       
       if (count > 0) {
         $selectiveBtn.prop("disabled", false);
@@ -996,7 +1066,7 @@ $(function(){
       }
 
       // Mettre à jour la case "Tout sélectionner"
-      const totalChecks = $adminChecks.length;
+      const totalChecks = $("#tblAdmin tbody .admin-check").length;
       if (totalChecks > 0 && count === totalChecks) {
         $selectAll.prop("checked", true);
       } else {
@@ -1013,7 +1083,7 @@ $(function(){
     $selectAll.on("change", function () {
       const isChecked = $(this).prop("checked");
       // Cocher/décocher toutes les cases DANS le corps de la table
-      $("#tblAdmin tbody").find(".admin-check").prop("checked", isChecked);
+      $("#tblAdmin tbody .admin-check").prop("checked", isChecked);
       updateSelectiveButton();
     });
 
@@ -1021,7 +1091,7 @@ $(function(){
     $("#selectiveBatchChangePlanModal").on("show.bs.modal", function (e) {
       const selectedEmails = [];
       // Récupérer les emails cochés DANS le corps de la table
-      $("#tblAdmin tbody").find(".admin-check:checked").each(function () {
+      $("#tblAdmin tbody .admin-check:checked").each(function () {
         selectedEmails.push($(this).val());
       });
 
@@ -1039,11 +1109,10 @@ $(function(){
       });
     });
 
-    // Gérer la pagination DataTables (pour que la sélection persiste visuellement)
-    // C'est un problème complexe. Pour l'instant, la sélection est réinitialisée à chaque changement de page.
-    // Le JS actuel fonctionne sur la PAGE VISIBLE. 
-    // Pour une sélection persistante, il faudrait stocker les IDs dans un array JS global.
-    // Pour cette version, nous gardons la logique simple : la sélection fonctionne sur la page courante.
+    // Ré-appliquer la logique de sélection après un changement de page ou une recherche
+    $('#tblAdmin').on('draw.dt', function () {
+        updateSelectiveButton();
+    });
 
     // Initialiser le bouton au chargement
     updateSelectiveButton();
