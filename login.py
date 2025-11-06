@@ -1,6 +1,7 @@
 # login.py
 # Description: Gère l'authentification, l'enregistrement, la récupération et le changement de mot de passe.
 # Version finale avec toutes les corrections appliquées.
+# AJOUT : Inclut les routes pour la politique de confidentialité et les conditions d'utilisation.
 
 import os
 import json
@@ -438,6 +439,9 @@ def complete_registration(token):
         # ---> AJOUT : Validation simple pour nom/prénom <---
         elif not nom_admin or not prenom_admin:
              flash("Le nom et le prénom sont requis.", "danger")
+        # ---> AJOUT : Validation de la case à cocher <---
+        elif not f.get("terms"):
+             flash("Vous devez accepter les conditions d'utilisation et la politique de confidentialité pour continuer.", "danger")
         # <--- FIN AJOUT --->
         else:
             users = load_users()
@@ -555,6 +559,18 @@ def logout():
     session.clear()
     flash("Vous avez été déconnecté.", "info")
     return redirect(url_for('login.login'))
+
+# ---> AJOUT : Routes pour les pages de confidentialité et conditions <---
+@login_bp.route('/privacy_policy')
+def privacy_policy():
+    """Affiche la page de politique de confidentialité."""
+    return render_template_string(privacy_template)
+
+@login_bp.route('/terms_of_use')
+def terms_of_use():
+    """Affiche la page des conditions d'utilisation."""
+    return render_template_string(terms_template)
+# <--- FIN AJOUT ---
 
 
 # --- TEMPLATES HTML ---
@@ -687,9 +703,11 @@ base_head_and_style = '''
 </head>
 '''
 
-login_template = f'''
+# ---> CORRECTION : Concaténation de base_head_and_style au lieu de l'interpolation f-string <---
+
+login_template = '''
 <!DOCTYPE html><html lang='fr'>
-{base_head_and_style}
+''' + base_head_and_style + '''
 <title>Connexion - EasyMedicalink</title>
 <body>
 <div class='container'>
@@ -711,11 +729,11 @@ login_template = f'''
                 </div>
             </div>
 
-            {{% with m=get_flashed_messages(with_categories=true) %}}
-              {{% for c,msg in m %}}
-              <div class='alert alert-{{{{c}}}} small mt-3'>{{{{msg}}}}</div>
-              {{% endfor %}}
-            {{% endwith %}}
+            {% with m=get_flashed_messages(with_categories=true) %}
+              {% for c,msg in m %}
+              <div class='alert alert-{{c}} small mt-3'>{{msg}}</div>
+              {% endfor %}
+            {% endwith %}
 
             <form method='POST' class='mt-3'>
               <div class='mb-3'>
@@ -741,8 +759,8 @@ login_template = f'''
               <button class='btn btn-gradient btn-lg w-100 py-3 fw-bold'>Se connecter</button>
             </form>
             <div class='d-flex flex-column gap-2 mt-3'>
-                <a href='{{{{ url_for("login.register") }}}}' class='btn btn-outline-secondary w-100'><i class='fas fa-user-plus me-1'></i> Créer un compte</a>
-                <a href='{{{{ url_for("login.forgot_password") }}}}' class='btn btn-link text-muted w-100 small'><i class='fas fa-unlock-alt me-1'></i> Mot de passe oublié ?</a>
+                <a href='{{ url_for("login.register") }}' class='btn btn-outline-secondary w-100'><i class='fas fa-user-plus me-1'></i> Créer un compte</a>
+                <a href='{{ url_for("login.forgot_password") }}' class='btn btn-link text-muted w-100 small'><i class='fas fa-unlock-alt me-1'></i> Mot de passe oublié ?</a>
             </div>
         </div>
 
@@ -751,7 +769,7 @@ login_template = f'''
                 <i class='fas fa-rocket me-2'></i>Découvrez Nos Offres
             </h3>
             <p class="text-center text-muted small mb-4">
-                Profitez de votre essai gratuit de {{{{ TRIAL_DAYS }}}} jours, puis choisissez un plan pour un accès complet.
+                Profitez de votre essai gratuit de {{ TRIAL_DAYS }} jours, puis choisissez un plan pour un accès complet.
             </p>
             <div class='row g-3'>
                 <div class='col-md-6 mb-3 mb-md-0'>
@@ -760,10 +778,10 @@ login_template = f'''
                         <div class='card-body d-flex flex-column p-3 text-center'>
                             <p class='small'>Accès universel depuis n'importe quel navigateur.</p>
                             <div class='my-2'><span class="fs-4 fw-bold">$15</span><span class="text-muted small">/mois</span></div>
-                            <a href="{{{{ url_for('activation.activation') }}}}" class='btn btn-sm btn-plan btn-web mt-auto'>Choisir 1 Mois</a>
+                            <a href="{{ url_for('activation.activation') }}" class='btn btn-sm btn-plan btn-web mt-auto'>Choisir 1 Mois</a>
                             <hr class='my-2'>
                             <div class='my-2'><span class="fs-4 fw-bold">$100</span><span class="text-muted small">/an</span></div>
-                            <a href="{{{{ url_for('activation.activation') }}}}" class='btn btn-sm btn-plan btn-web mt-auto'>Choisir 1 An</a>
+                            <a href="{{ url_for('activation.activation') }}" class='btn btn-sm btn-plan btn-web mt-auto'>Choisir 1 An</a>
                             <div class="badge-popular">Économie</div>
                         </div>
                     </div>
@@ -774,30 +792,30 @@ login_template = f'''
                         <div class='card-body d-flex flex-column p-3 text-center'>
                             <p class='small'>Performance maximale sur votre PC Windows.</p>
                             <div class='my-2'><span class="fs-4 fw-bold">$50</span><span class="text-muted small">/an</span></div>
-                            <a href="{{{{ url_for('activation.activation') }}}}" class='btn btn-sm btn-plan btn-local mt-auto'>Licence 1 An</a>
+                            <a href="{{ url_for('activation.activation') }}" class='btn btn-sm btn-plan btn-local mt-auto'>Licence 1 An</a>
                             <hr class='my-2'>
                             <div class='my-2'><span class="fs-4 fw-bold">$120</span><span class="text-muted small">/à vie</span></div>
-                            <a href="{{{{ url_for('activation.activation') }}}}" class='btn btn-sm btn-plan btn-local mt-auto'>Licence Illimitée</a>
+                            <a href="{{ url_for('activation.activation') }}" class='btn btn-sm btn-plan btn-local mt-auto'>Licence Illimitée</a>
                             <div class="badge-popular">__  Meilleur Choix</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {{% if win64_filename or win32_filename %}}
+            {% if win64_filename or win32_filename %}
             <div class='text-center mt-4 pt-4 border-top'>
                 <h5 class='fw-bold card-title'><i class="fab fa-windows"></i> Version Locale</h5>
                 <p class="small text-muted mb-3">Pour une expérience optimale sur votre ordinateur, téléchargez l'application.</p>
                 <div class='d-flex gap-2 justify-content-center'>
-                  {{% if win64_filename %}}
-                  <a href="{{{{ url_for('static', filename=win64_filename) }}}}" class='btn btn-sm btn-success'><i class='fas fa-download me-1'></i> Win 64-bit</a>
-                  {{% endif %}}
-                  {{% if win32_filename %}}
-                  <a href="{{{{ url_for('static', filename=win32_filename) }}}}" class='btn btn-sm btn-secondary'><i class='fas fa-download me-1'></i> Win 32-bit</a>
-                  {{% endif %}}
+                  {% if win64_filename %}
+                  <a href="{{ url_for('static', filename=win64_filename) }}" class='btn btn-sm btn-success'><i class='fas fa-download me-1'></i> Win 64-bit</a>
+                  {% endif %}
+                  {% if win32_filename %}
+                  <a href="{{ url_for('static', filename=win32_filename) }}" class='btn btn-sm btn-secondary'><i class='fas fa-download me-1'></i> Win 32-bit</a>
+                  {% endif %}
                 </div>
             </div>
-            {{% endif %}}
+            {% endif %}
         </div>
     </div>
 
@@ -817,44 +835,50 @@ login_template = f'''
             </div>
         </div>
     </div>
+    
+    {# AJOUT : Liens de confidentialité et conditions dans le pied de page #}
     <div class='mt-4 pt-3 border-top text-center'>
-        <p class='text-muted small'>Contact: sastoukadigital@gmail.com | +212652084735</p>
+        <p class='text-muted small mb-1'>Contact: sastoukadigital@gmail.com | +212652084735</p>
+        <p class='text-muted small mb-0'>
+            <a href="{{ url_for('login.terms_of_use') }}" target="_blank" class="text-muted">Conditions d'utilisation</a> | 
+            <a href="{{ url_for('login.privacy_policy') }}" target="_blank" class="text-muted">Politique de confidentialité</a>
+        </p>
     </div>
 
 </div></div>
   <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>
   <script>
-    document.addEventListener('DOMContentLoaded', () => {{
+    document.addEventListener('DOMContentLoaded', () => {
         let deferredPrompt;
         const installBanner = document.getElementById('pwa-install-banner');
         const installButton = document.getElementById('pwa-install-button');
-        if (installBanner) {{ installBanner.classList.add('d-none'); }}
-        window.addEventListener('beforeinstallprompt', (e) => {{
+        if (installBanner) { installBanner.classList.add('d-none'); }
+        window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            if (installBanner) {{ installBanner.classList.remove('d-none'); }}
-        }});
-        if (installButton) {{
-            installButton.addEventListener('click', async () => {{
-                if (deferredPrompt) {{
+            if (installBanner) { installBanner.classList.remove('d-none'); }
+        });
+        if (installButton) {
+            installButton.addEventListener('click', async () => {
+                if (deferredPrompt) {
                     deferredPrompt.prompt();
                     await deferredPrompt.userChoice;
                     deferredPrompt = null;
-                    if (installBanner) {{ installBanner.classList.add('d-none'); }}
-                }}
-            }});
-        }}
-    }});
+                    if (installBanner) { installBanner.classList.add('d-none'); }
+                }
+            });
+        }
+    });
   </script>
-  {{% include '_floating_assistant.html' %}}
+  {% include '_floating_assistant.html' %}
 </body>
 </html>
 '''
 
-register_start_template = f'''
+register_start_template = '''
 <!DOCTYPE html>
 <html lang="fr">
-{base_head_and_style}
+''' + base_head_and_style + '''
 <title>Créer un compte - Étape 1</title>
 <body class="d-flex align-items-center">
   <div class="container">
@@ -862,9 +886,9 @@ register_start_template = f'''
       <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon mx-auto d-block">
       <h3 class="card-title fw-bold"><i class="fas fa-user-plus me-2"></i> Créer un compte</h3>
       <p class="text-muted small mb-4">Saisissez votre e-mail pour recevoir un lien sécurisé et finaliser votre inscription.</p>
-      {{% with msgs = get_flashed_messages(with_categories=true) %}}
-        {{% for cat,msg in msgs %}}<div class="alert alert-{{{{cat}}}} small">{{{{msg}}}}</div>{{% endfor %}}
-      {{% endwith %}}
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
+      {% endwith %}
       <form method="POST">
         <div class="mb-3">
             <label class="form-label small text-start w-100"><i class="fas fa-envelope me-2"></i>Adresse e-mail</label>
@@ -873,7 +897,15 @@ register_start_template = f'''
         <button type="submit" class="btn btn-gradient btn-lg w-100">Envoyer le lien</button>
       </form>
       <div class="mt-3">
-        <a href="{{{{ url_for('login.login') }}}}" class="btn btn-sm btn-link text-muted"><i class="fas fa-arrow-left me-1"></i> Retour à la connexion</a>
+        <a href="{{ url_for('login.login') }}" class="btn btn-sm btn-link text-muted"><i class="fas fa-arrow-left me-1"></i> Retour à la connexion</a>
+      </div>
+      
+      {# AJOUT : Liens de confidentialité et conditions dans le pied de page #}
+      <div class='mt-4 pt-3 border-top text-center'>
+        <p class='text-muted small mb-0'>
+            <a href="{{ url_for('login.terms_of_use') }}" target="_blank" class="text-muted">Conditions d'utilisation</a> | 
+            <a href="{{ url_for('login.privacy_policy') }}" target="_blank" class="text-muted">Politique de confidentialité</a>
+        </p>
       </div>
     </div>
   </div>
@@ -881,10 +913,10 @@ register_start_template = f'''
 </html>
 '''
 
-register_template = f'''
+register_template = '''
 <!DOCTYPE html>
 <html lang="fr">
-{base_head_and_style}
+''' + base_head_and_style + '''
 <title>Finaliser l'inscription - EasyMedicalink</title>
 <body class="d-flex align-items-center">
   <div class="container">
@@ -893,15 +925,15 @@ register_template = f'''
         <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon">
         <h3 class="card-title fw-bold"><i class="fas fa-check-circle me-2"></i> Finaliser l'inscription</h3>
       </div>
-      {{% with msgs = get_flashed_messages(with_categories=true) %}}
-        {{% for cat,msg in msgs %}}<div class="alert alert-{{{{cat}}}} small mt-3">{{{{msg}}}}</div>{{% endfor %}}
-      {{% endwith %}}
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small mt-3">{{msg}}</div>{% endfor %}
+      {% endwith %}
       <form id="registerForm" method="POST" class="mt-3">
         <div class="mb-3">
           <label class="form-label small"><i class="fas fa-envelope me-2"></i>Email (vérifié)</label>
-          <input type="email" name="email" class="form-control" value="{{{{ user_email }}}}" readonly>
+          <input type="email" name="email" class="form-control" value="{{ user_email }}" readonly>
         </div>
-        {{# #}}
+        {# #}
         <div class="row g-2 mb-3">
                 <div class="col-md-6">
                     <label class="form-label small"><i class="fas fa-user me-2"></i>Prénom</label>
@@ -912,7 +944,7 @@ register_template = f'''
             <input type="text" name="nom" class="form-control" required>
           </div>
         </div>
-        {{# #}}
+        {# #}
         <div class="row g-2 mb-3">
           <div class="col-md-6">
             <label class="form-label small"><i class="fas fa-key me-2"></i>Mot de passe</label>
@@ -937,10 +969,21 @@ register_template = f'''
             <input type="text" name="address" class="form-control" required>
           </div>
         </div>
-        <div class="mb-4">
+        <div class="mb-3"> {# Changé de mb-4 à mb-3 #}
           <label class="form-label small"><i class="fab fa-whatsapp me-2"></i>Téléphone</label>
-          <input type="tel" name="phone" class="form-control" placeholder="ex: +212XXXXXXXXX" required pattern="^\+\d{{9,}}$">
+          <input type="tel" name="phone" class="form-control" placeholder="ex: +212XXXXXXXXX" required pattern="^\+\d{9,}$">
         </div>
+        
+        {# AJOUT : Case à cocher pour les conditions #}
+        <div class="form-check mb-4">
+          <input class="form-check-input" type="checkbox" name="terms" id="termsCheck" required>
+          <label class="form-check-label small" for="termsCheck">
+            J'ai lu et j'accepte les 
+            <a href="{{ url_for('login.terms_of_use') }}" target="_blank">Conditions d'utilisation</a> et la 
+            <a href="{{ url_for('login.privacy_policy') }}" target="_blank">Politique de confidentialité</a>.
+          </label>
+        </div>
+        
         <button type="submit" class="btn btn-gradient btn-lg w-100">Créer mon compte</button>
       </form>
     </div>
@@ -949,19 +992,19 @@ register_template = f'''
 </html>
 '''
 
-reset_template = f'''
+reset_template = '''
 <!DOCTYPE html>
 <html lang="fr">
-{base_head_and_style}
+''' + base_head_and_style + '''
 <title>Réinitialiser mot de passe</title>
 <body class="d-flex align-items-center">
   <div class="container">
     <div class="main-card mx-auto p-4 p-md-5 text-center">
       <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon">
       <h3 class="card-title fw-bold"><i class="fas fa-redo-alt me-2"></i>Nouveau Mot de Passe</h3>
-      {{% with msgs = get_flashed_messages(with_categories=true) %}}
-        {{% for cat,msg in msgs %}}<div class="alert alert-{{{{cat}}}} small mt-3">{{{{msg}}}}</div>{{% endfor %}}
-      {{% endwith %}}
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small mt-3">{{msg}}</div>{% endfor %}
+      {% endwith %}
       <form method="POST" class="mt-3">
         <div class="mb-3">
             <label class="form-label small text-start w-100"><i class="fas fa-key me-2"></i>Nouveau mot de passe</label>
@@ -973,16 +1016,24 @@ reset_template = f'''
         </div>
         <button type="submit" class="btn btn-gradient btn-lg w-100">Mettre à jour</button>
       </form>
+      
+      {# AJOUT : Liens de confidentialité et conditions dans le pied de page #}
+      <div class='mt-4 pt-3 border-top text-center'>
+        <p class='text-muted small mb-0'>
+            <a href="{{ url_for('login.terms_of_use') }}" target="_blank" class="text-muted">Conditions d'utilisation</a> | 
+            <a href="{{ url_for('login.privacy_policy') }}" target="_blank" class="text-muted">Politique de confidentialité</a>
+        </p>
+      </div>
     </div>
   </div>
 </body>
 </html>
 '''
 
-forgot_template = f'''
+forgot_template = '''
 <!DOCTYPE html>
 <html lang="fr">
-{base_head_and_style}
+''' + base_head_and_style + '''
 <title>Récupération mot de passe</title>
 <body class="d-flex align-items-center">
   <div class="container">
@@ -990,9 +1041,9 @@ forgot_template = f'''
         <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon">
         <h3 class="card-title fw-bold"><i class="fas fa-unlock-alt me-2"></i> Récupération</h3>
         <p class="text-center text-muted small mb-4">Saisissez l'e-mail de votre compte. Un lien pour réinitialiser votre mot de passe vous sera envoyé.</p>
-        {{% with msgs = get_flashed_messages(with_categories=true) %}}
-          {{% for cat,msg in msgs %}}<div class="alert alert-{{{{cat}}}} small">{{{{msg}}}}</div>{{% endfor %}}
-        {{% endwith %}}
+        {% with msgs = get_flashed_messages(with_categories=true) %}
+          {% for cat,msg in msgs %}<div class="alert alert-{{cat}} small">{{msg}}</div>{% endfor %}
+        {% endwith %}
         <form method="POST">
           <div class="mb-3">
               <label class="form-label small text-start w-100"><i class="fas fa-envelope me-2"></i>Adresse e-mail</label>
@@ -1001,7 +1052,15 @@ forgot_template = f'''
           <button type="submit" class="btn btn-gradient btn-lg w-100">Envoyer le lien</button>
         </form>
         <div class="mt-3">
-          <a href="{{{{ url_for('login.login') }}}}" class="btn btn-sm btn-link text-muted"><i class="fas fa-arrow-left me-1"></i> Retour à la connexion</a>
+          <a href="{{ url_for('login.login') }}" class="btn btn-sm btn-link text-muted"><i class="fas fa-arrow-left me-1"></i> Retour à la connexion</a>
+        </div>
+        
+        {# AJOUT : Liens de confidentialité et conditions dans le pied de page #}
+        <div class='mt-4 pt-3 border-top text-center'>
+            <p class='text-muted small mb-0'>
+                <a href="{{ url_for('login.terms_of_use') }}" target="_blank" class="text-muted">Conditions d'utilisation</a> | 
+                <a href="{{ url_for('login.privacy_policy') }}" target="_blank" class="text-muted">Politique de confidentialité</a>
+            </p>
         </div>
     </div>
   </div>
@@ -1009,3 +1068,101 @@ forgot_template = f'''
 </html>
 '''
 
+# ---> AJOUT : Templates pour les pages de confidentialité et conditions <---
+
+privacy_template = f'''
+<!DOCTYPE html>
+<html lang="fr">
+''' + base_head_and_style + f'''
+<title>Politique de confidentialité - EasyMedicalink</title>
+<body class="d-flex align-items-center">
+  <div class="container">
+    <div class="main-card mx-auto p-4 p-md-5">
+      <div class="text-center">
+        <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon">
+        <h3 class="card-title fw-bold"><i class="fas fa-shield-alt me-2"></i> Politique de confidentialité</h3>
+      </div>
+      <div class="mt-4" style="max-height: 60vh; overflow-y: auto; padding-right: 15px;">
+        <p><strong>Dernière mise à jour :</strong> {date.today().strftime("%d/%m/%Y")}</p>
+        
+        <h4>1. Collecte des informations</h4>
+        <p>Nous collectons des informations lorsque vous vous inscrivez sur notre application, lorsque vous vous connectez à votre compte, et lorsque vous utilisez les services. Les informations collectées incluent votre nom, votre prénom, votre adresse e-mail, votre numéro de téléphone, et les données relatives à votre clinique (nom, adresse, etc.).</p>
+
+        <h4>2. Utilisation des informations</h4>
+        <p>Toutes les informations que nous recueillons auprès de vous sont utilisées pour :</p>
+        <ul>
+            <li>Personnaliser votre expérience et répondre à vos besoins individuels</li>
+            <li>Fournir un contenu applicatif personnalisé</li>
+            <li>Améliorer notre application</li>
+            <li>Améliorer le service client et vos besoins de prise en charge</li>
+            <li>Vous contacter par e-mail</li>
+        </ul>
+
+        <h4>3. Confidentialité des données médicales</h4>
+        <p>EasyMedicalink est conçu pour gérer des données de patients. Ces données sont stockées localement sur votre appareil ou sur votre serveur (selon la version). Nous, Sastouka Digital, n'avons pas accès à ces données patients. Vous êtes le seul responsable de la sécurité, de la sauvegarde et de la conformité (par exemple, GDPR, HIPAA, ou lois locales) de ces données.</p>
+
+        <h4>4. Divulgation à des tiers</h4>
+        <p>Nous ne vendons, n'échangeons et ne transférons pas vos informations personnelles identifiables (données d'administrateur/médecin) à des tiers. Les données de vos patients ne nous sont jamais transmises.</p>
+
+        <h4>5. Protection des informations</h4>
+        <p>Nous mettons en œuvre une variété de mesures de sécurité pour préserver la sécurité de vos informations de compte. Nous utilisons un cryptage pour protéger les informations sensibles.</p>
+
+        <h4>6. Consentement</h4>
+        <p>En utilisant notre application, vous consentez à notre politique de confidentialité.</p>
+        
+        <hr>
+        <div class="text-center">
+             <a href="javascript:window.close();" class="btn btn-sm btn-outline-secondary">Fermer cette page</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+'''
+
+terms_template = f'''
+<!DOCTYPE html>
+<html lang="fr">
+''' + base_head_and_style + f'''
+<title>Conditions d'utilisation - EasyMedicalink</title>
+<body class="d-flex align-items-center">
+  <div class="container">
+    <div class="main-card mx-auto p-4 p-md-5">
+      <div class="text-center">
+        <img src="/static/pwa/icon-512.png" alt="EasyMedicalink Icon" class="app-icon">
+        <h3 class="card-title fw-bold"><i class="fas fa-file-signature me-2"></i> Conditions d'utilisation</h3>
+      </div>
+      <div class="mt-4" style="max-height: 60vh; overflow-y: auto; padding-right: 15px;">
+        <p><strong>Dernière mise à jour :</strong> {date.today().strftime("%d/%m/%Y")}</p>
+        
+        <h4>1. Acceptation des conditions</h4>
+        <p>En accédant et en utilisant l'application EasyMedicalink (ci-après "l'Application"), vous acceptez d'être lié par ces Conditions d'utilisation (ci-après "Conditions"). Si vous n'êtes pas d'accord, n'utilisez pas l'Application.</p>
+
+        <h4>2. Licence d'utilisation</h4>
+        <p>Nous vous accordons une licence limitée, non exclusive, révocable et non transférable pour utiliser l'Application conformément à ces Conditions et au plan de souscription choisi (Essai, Mensuel, Annuel, à Vie).</p>
+
+        <h4>3. Responsabilité des données</h4>
+        <p>L'Application est un outil de gestion. Vous êtes entièrement et uniquement responsable de l'exactitude, de l'intégrité, de la légalité et de la sécurité des données que vous saisissez dans l'Application, y compris, mais sans s'y limiter, les dossiers des patients.</p>
+        <p>Vous êtes responsable de la mise en conformité avec toutes les lois applicables en matière de protection des données médicales et de la vie privée dans votre juridiction. EasyMedicalink (Sastouka Digital) agit en tant que fournisseur de logiciel et n'est pas un hébergeur de données de santé agréé pour les données patients, qui restent sous votre contrôle.</p>
+
+        <h4>4. Sauvegardes</h4>
+        <p>Vous êtes responsable d'effectuer des sauvegardes régulières et sécurisées de vos données. Nous ne sommes pas responsables de toute perte de données.</p>
+
+        <h4>5. Limitations de responsabilité</h4>
+        <p>L'Application est fournie "telle quelle". En aucun cas, Sastouka Digital ne pourra être tenu responsable de tout dommage direct, indirect, spécial ou consécutif résultant de l'utilisation ou de l'incapacité à utiliser l'Application, y compris la perte de données ou les interruptions d'activité.</p>
+
+        <h4>6. Modifications</h4>
+        <p>Nous nous réservons le droit de modifier ces Conditions à tout moment. Votre utilisation continue de l'Application après de telles modifications constitue votre acceptation des nouvelles Conditions.</p>
+
+        <hr>
+        <div class="text-center">
+             <a href="javascript:window.close();" class="btn btn-sm btn-outline-secondary">Fermer cette page</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+'''
+# <--- FIN CORRECTION ---
