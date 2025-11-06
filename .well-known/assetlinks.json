@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.easymedicalink.www.twa",
+      "sha256_cert_fingerprints": [
+        "93:06:66:DC:F5:2F:FA:B7:45:B1:FD:AA:47:CD:8C:7F:CD:71:A7:F7:C5:36:19:B6:79:06:18:38:31:88:A8:C8"
+      ]
+    }
+  }
+]
