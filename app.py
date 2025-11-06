@@ -18,7 +18,8 @@ except Exception as e:
     print(f"🔥 ERREUR lors de la lecture de email.json: {e}")
 
 # --- 2. IMPORTS DES MODULES DE L'APPLICATION ---
-from flask import Flask, session, redirect, url_for, request, flash
+# [AJOUT] Ajout de send_from_directory pour servir le fichier assetlinks.json
+from flask import Flask, session, redirect, url_for, request, flash, send_from_directory
 from flask_mail import Mail
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -35,6 +36,10 @@ mail = Mail()
 def create_app():
     instance_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MEDICALINK_DATA', 'instance')
     app = Flask(__name__, instance_path=instance_folder_path, static_folder='static', static_url_path='/static', template_folder='templates')
+    
+    # [AJOUT] Définir le chemin racine de l'application pour send_from_directory
+    # Cela suppose que votre dossier .well-known est au même niveau que app.py
+    APP_ROOT = os.path.dirname(os.path.abspath(__file__))
     
     # Configuration générale de l'application
     app.secret_key = os.environ.get("SECRET_KEY", "une_cle_secrete_par_defaut_pour_le_dev")
@@ -100,11 +105,19 @@ def create_app():
             return redirect(url_for("accueil.accueil"))
         return redirect(url_for("login.login"))
 
+    # [AJOUT] Route pour servir le fichier assetlinks.json
+    @app.route('/.well-known/assetlinks.json')
+    def serve_assetlinks():
+        well_known_dir = os.path.join(APP_ROOT, '.well-known')
+        return send_from_directory(well_known_dir, 'assetlinks.json', mimetype='application/json')
+
     # Gardien de sécurité global s'exécutant avant chaque requête
     @app.before_request
     def central_request_guard():
         # Accès public pour les assets statiques et le service worker
-        if request.path.startswith(('/static/', '/icon/')) or request.path in ['/sw.js', '/manifest.webmanifest', '/service-worker.js', '/offline']:
+        # [MODIFIÉ] Ajout de '/.well-known/assetlinks.json' à la liste des accès publics
+        public_paths = ['/sw.js', '/manifest.webmanifest', '/service-worker.js', '/offline', '/.well-known/assetlinks.json']
+        if request.path.startswith(('/static/', '/icon/')) or request.path in public_paths:
             return
 
         # Accès public pour les blueprints ne nécessitant pas de connexion
