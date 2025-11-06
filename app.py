@@ -127,9 +127,17 @@ def create_app():
         # Accès public pour des pages spécifiques (connexion, inscription, etc.)
         public_endpoints = [
             'login.login', 'login.register', 'login.complete_registration',
-            'login.forgot_password', 'login.reset_password', 'activation.activation',
-            'activation.paypal_success', 'activation.paypal_cancel'
+            'login.forgot_password', 'login.reset_password', 
+            'activation.activation',
+            'activation.paypal_success', 'activation.paypal_cancel',
+            
+            # --- MIS À JOUR ---
+            # Autoriser l'accès public aux pages de confidentialité et de conditions
+            'login.privacy_policy', 
+            'login.terms_of_use'
+            # --- FIN MIS À JOUR ---
         ]
+        
         if request.endpoint in public_endpoints:
             return
 
