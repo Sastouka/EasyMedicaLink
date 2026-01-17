@@ -70,7 +70,8 @@ if API_KEY == "VOTRE_CLE_API":
 
 try:
     genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel('gemini-pro-latest') # Utilisation de la version Pro comme discuté
+    # MODIFICATION : Utilisation explicite du modèle Flash
+    model = genai.GenerativeModel('gemini-flash-latest') 
 except Exception as e:
     print(f"Erreur critique lors de la configuration de l'API Gemini : {e}")
     model = None

@@ -27,7 +27,7 @@ if "Votre_Cle_API_GOOGLE" in API_KEY:
 
 try:
     genai.configure(api_key=API_KEY)
-    # Confirmation de l'utilisation du modèle "Flash" pour une réactivité maximale.
+    # MODIFICATION : Utilisation du modèle Flash pour la rapidité et l'économie de quota
     model = genai.GenerativeModel('gemini-flash-latest')
 except Exception as e:
     print(f"Erreur critique lors de la configuration du service IA : {e}")
