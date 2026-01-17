@@ -258,8 +258,8 @@ def get_user_details(user_email: str) -> dict:
 
 def create_new_user(form_data: dict) -> tuple[bool, str]:
     """
-    Crée un nouvel utilisateur en appliquant une limite globale de 3 comptes
-    secondaires maximum pour l'administrateur.
+    Crée un nouvel utilisateur.
+    MODIFICATION : La limite globale a été retirée (Illimité).
     """
     admin_email = session['email']
     nom, prenom, role, password = (
@@ -269,28 +269,23 @@ def create_new_user(form_data: dict) -> tuple[bool, str]:
     phone, linked_doctor = form_data.get('phone', '').strip(), form_data.get('linked_doctor', '').strip()
     allowed_pages = form_data.getlist('allowed_pages[]')
 
-    # --- LOGIQUE DE VÉRIFICATION DE LA LIMITE GLOBALE (3 comptes max) ---
-    GLOBAL_USER_LIMIT = 3
-
     users = login.load_users()
     users_owned_by_admin = [u for u in users.values() if u.get('owner') == admin_email]
 
-    # Compter le nombre actuel d'utilisateurs non-admin (pour éviter de compter l'admin lui-même)
+    # On compte toujours pour l'info, mais on ne s'en sert plus pour bloquer
     current_non_admin_count = sum(1 for u in users_owned_by_admin if u.get('email') != admin_email and u.get('role') != 'admin')
 
-    if role != 'admin' and current_non_admin_count >= GLOBAL_USER_LIMIT:
-        return False, f"Limite globale atteinte. L'administrateur est limité à un maximum de {GLOBAL_USER_LIMIT} comptes secondaires (actuellement {current_non_admin_count})."
-    # --- FIN DE LA LOGIQUE DE VÉRIFICATION DE LA LIMITE GLOBALE ---
+    # --- MODIFICATION : BLOCAGE SUPPRIMÉ ---
+    # L'ancienne vérification (if ... >= GLOBAL_USER_LIMIT) est supprimée ici.
+    # ---------------------------------------
 
     # --- LOGIQUE DE CRÉATION D'EMAIL BASÉE SUR L'ADMIN PRINCIPAL ---
     admin_email_prefix = admin_email.split('@')[0]
 
     # Structure de l'email pour les rôles secondaires (non-admin)
     if role != 'admin':
-        # Exemple: jean.dupont@adminprefixe.eml.com
         key = f"{prenom.lower()}.{nom.lower()}@{admin_email_prefix}.eml.com"
     else:
-        # Si pour une raison quelconque on tentait de créer un autre admin, on donne un autre domaine
         key = f"{prenom.lower()}.{nom.lower()}@{admin_email_prefix}.eml-admin.com"
 
     # Vérification d'unicité de l'email
@@ -310,7 +305,6 @@ def create_new_user(form_data: dict) -> tuple[bool, str]:
         user_data['allowed_pages'].append('accueil')
 
     if role == 'admin':
-        # Les admins ont toutes les permissions par défaut
         user_data['allowed_pages'] = login.ALL_BLUEPRINTS
 
     if role == 'assistante':
@@ -322,26 +316,20 @@ def create_new_user(form_data: dict) -> tuple[bool, str]:
     users[key] = user_data
     login.save_users(users)
 
-    # Logique optionnelle de création d'une assistante temporaire pour le médecin (conservée)
+    # Logique de l'assistante temporaire (MODIFIÉE POUR ÊTRE ILLIMITÉE)
     if role == 'medecin':
-        # Cette logique est lourde et non nécessaire avec la limite globale stricte,
-        # mais je la maintiens car elle faisait partie du comportement original.
         existing_assistants = [u for u in users.values() if u.get('role') == 'assistante' and u.get('linked_doctor') == key]
-        if not existing_assistants and current_non_admin_count < GLOBAL_USER_LIMIT :
+        # On retire la condition "and current_non_admin_count < GLOBAL_USER_LIMIT"
+        if not existing_assistants: 
             temp_assistant_email = f"assist.{prenom.lower()}.{nom.lower()}@{admin_email_prefix}.eml.com"
             if login._is_email_globally_unique(temp_assistant_email):
-
-                # Double vérification pour s'assurer qu'ajouter l'assistante ne dépasse pas 3
-                if current_non_admin_count + 1 <= GLOBAL_USER_LIMIT:
-                    users[temp_assistant_email] = {
-                        'nom': 'Temporaire', 'prenom': 'Assistante', 'role': 'assistante',
-                        'password': login.hash_password('password'), 'active': True, 'owner': admin_email, 'phone': '',
-                        'linked_doctor': key, 'allowed_pages': ['rdv', 'routes', 'facturation', 'patient_rdv', 'accueil']
-                    }
-                    login.save_users(users) # Nouvelle sauvegarde pour l'assistante
-                    flash(f"Assistante temporaire ({temp_assistant_email}) créée pour {prenom} {nom}.", "info")
-                else:
-                    flash(f"ATTENTION: L'assistante par défaut n'a pas pu être créée car vous êtes à la limite de {GLOBAL_USER_LIMIT} utilisateurs.", "warning")
+                users[temp_assistant_email] = {
+                    'nom': 'Temporaire', 'prenom': 'Assistante', 'role': 'assistante',
+                    'password': login.hash_password('password'), 'active': True, 'owner': admin_email, 'phone': '',
+                    'linked_doctor': key, 'allowed_pages': ['rdv', 'routes', 'facturation', 'patient_rdv', 'accueil']
+                }
+                login.save_users(users)
+                flash(f"Assistante temporaire ({temp_assistant_email}) créée pour {prenom} {nom}.", "info")
 
     return True, "Compte créé avec succès !"
 

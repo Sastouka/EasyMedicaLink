@@ -612,7 +612,7 @@ def accueil():
     config = utils.load_config()
     session['theme'] = config.get('theme', theme.DEFAULT_THEME)
     current_date = datetime.now().strftime("%Y-%m-%d")
-    host_address = f"http://{utils.LOCAL_IP}:3000"
+    host_address = f"http://{utils.LOCAL_IP}:3001"
 
     logged_in_full_name = None 
     user_email = session.get('email')
