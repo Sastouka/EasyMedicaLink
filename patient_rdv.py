@@ -690,8 +690,8 @@ patient_rdv_template = r"""
     color: white !important;
     display: flex;
     align-items: center;
-    justify-content: center; /* Centrer le texte de la marque */
-    flex-grow: 1; /* Permet au brand de prendre l'espace disponible */
+    justify-content: center;
+    flex-grow: 1;
     transition: transform 0.3s ease;
   }
   .navbar-brand:hover {
@@ -815,17 +815,26 @@ patient_rdv_template = r"""
     padding: 0 0.25rem;
     transform: translateX(-0.25rem);
   }
-  .floating-label input[type="date"]:not([value=""])::-webkit-datetime-edit-text,
-  .floating-label input[type="date"]:not([value=""])::-webkit-datetime-edit-month-field,
-  .floating-label input[type="date"]:not([value=""])::-webkit-datetime-edit-day-field,
-  .floating-label input[type="date"]:not([value=""])::-webkit-datetime-edit-year-field {
-    color: var(--text-color);
+  /* Style spécifique pour le sélecteur de date personnalisé */
+  .custom-date-group select {
+      border: 1px solid var(--secondary-color);
+      background-color: var(--card-bg);
+      color: var(--text-color);
+      padding: 0.75rem 0.5rem;
   }
-  .floating-label input[type="date"]::-webkit-calendar-picker-indicator {
-    filter: {% if theme_vars.get('name') == 'dark' %}invert(1){% else %}none{% endif %};
+  .custom-date-group select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 0.25rem rgba(var(--primary-color-rgb), 0.25);
+  }
+  .custom-date-label {
+      font-size: 0.85rem;
+      color: var(--text-color-light);
+      margin-bottom: 0.25rem;
+      display: block;
+      margin-left: 0.25rem;
   }
 
-  /* Boutons radio de genre (Gender Radio Buttons) */
+  /* Boutons radio de genre */
   .gender-btn {
     display: flex;
     gap: 0.5rem;
@@ -862,7 +871,7 @@ patient_rdv_template = r"""
     border-color: var(--primary-color);
   }
 
-  /* Boutons (Buttons) */
+  /* Boutons */
   .btn {
     border-radius: var(--border-radius-md);
     font-weight: 600;
@@ -896,16 +905,7 @@ patient_rdv_template = r"""
     border-color: var(--success-color-dark);
     box-shadow: var(--shadow-medium);
   }
-  .btn-warning {
-    background-color: var(--warning-color);
-    border-color: var(--warning-color);
-    color: white;
-  }
-  .btn-warning:hover {
-    background-color: var(--warning-color-dark);
-    border-color: var(--warning-color-dark);
-    box-shadow: var(--shadow-medium);
-  }
+  /* Autres boutons... */
   .btn-danger {
       background-color: var(--danger-color);
       border-color: var(--danger-color);
@@ -938,47 +938,25 @@ patient_rdv_template = r"""
     padding-bottom: 0.75rem;
   }
 
-  /* Ajustements responsives (Responsive adjustments) */
+  /* Ajustements responsives */
   @media (max-width: 768px) {
-    .card-header h1 {
-      font-size: 1.5rem !important;
-    }
-    .card-header .header-item {
-      font-size: 1rem !important;
-    }
-    .card-header i {
-      font-size: 1.5rem !important;
-    }
-    .gender-btn label {
-      flex: 1 1 100%;
-    }
-    .btn {
-      width: 100%;
-      margin-bottom: 0.5rem;
-    }
+    .card-header h1 { font-size: 1.5rem !important; }
+    .card-header .header-item { font-size: 1rem !important; }
+    .card-header i { font-size: 1.5rem !important; }
+    .gender-btn label { flex: 1 1 100%; }
+    .btn { width: 100%; margin-bottom: 0.5rem; }
   }
 
-  /* Styles pour le panneau d'administration */
+  /* Styles Admin */
   .admin-panel {
       border: 2px dashed var(--primary-color);
       border-radius: var(--border-radius-lg);
       padding: 1.5rem;
       margin-top: 2rem;
-      background-color: rgba(var(--primary-color-rgb), 0.05); /* Légère transparence */
+      background-color: rgba(var(--primary-color-rgb), 0.05);
   }
-  .admin-panel h4 {
-      color: var(--primary-color);
-  }
-  .admin-panel label {
-      font-weight: 600;
-  }
-  .disabled-periods-table th {
-      background-color: var(--secondary-color);
-      color: var(--button-text);
-  }
-  .disabled-periods-table tbody tr:nth-child(odd) {
-      background-color: rgba(var(--secondary-color-rgb), 0.1);
-  }
+  .admin-panel h4 { color: var(--primary-color); }
+  .admin-panel label { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -988,7 +966,6 @@ patient_rdv_template = r"""
     <a class="navbar-brand d-flex align-items-center" href="#">
       <i class="fas fa-heartbeat me-2"></i>Prendre RDV
     </a>
-    {# Bouton "Gérer Indisponibilités" retiré d'ici #}
   </div>
 </nav>
 
@@ -1002,8 +979,6 @@ patient_rdv_template = r"""
             {{ config.nom_clinique or config.cabinet or 'NOM CLINIQUE/CABINET/CENTRE MEDICAL' }}
           </h1>
           <div class="d-flex justify-content-center gap-4 flex-wrap">
-            <div class="d-flex align-items-center header-item">
-            </div>
             <div class="d-flex align-items-center header-item">
               <i class="fas fa-map-marker-alt me-2"></i><span>{{ config.location or 'LIEU' }}</span>
             </div>
@@ -1029,7 +1004,7 @@ patient_rdv_template = r"""
       {% if today_disabled_reason %}
         <div class="alert alert-warning text-center" role="alert">
             <i class="fas fa-exclamation-triangle me-2"></i>
-            Le cabinet est actuellement fermé pour les rendez-vous en ligne pour cette période : <strong>{{ today_disabled_reason }}</strong>.
+            Le cabinet est actuellement fermé pour les rendez-vous en ligne : <strong>{{ today_disabled_reason }}</strong>.
         </div>
       {% endif %}
 
@@ -1069,11 +1044,23 @@ patient_rdv_template = r"""
                   <label for="genderO"><i class="fas fa-genderless"></i> Autre</label>
                 </div>
               </div>
-              <div class="col-md-4 floating-label">
-                <input type="date" name="patient_dob" id="patient_dob"
-                       class="form-control" placeholder=" " required>
-                <label for="patient_dob">Date de naissance</label>
+
+              <div class="col-md-4">
+                  <span class="custom-date-label">Date de naissance</span>
+                  <div class="input-group custom-date-group">
+                      <select class="form-select" id="dob_day" aria-label="Jour">
+                          <option value="">Jour</option>
+                      </select>
+                      <select class="form-select" id="dob_month" aria-label="Mois">
+                          <option value="">Mois</option>
+                      </select>
+                      <select class="form-select" id="dob_year" aria-label="Année">
+                          <option value="">Année</option>
+                      </select>
+                  </div>
+                  <input type="hidden" name="patient_dob" id="patient_dob" required>
               </div>
+
               <div class="col-md-4 floating-label">
                 <input type="tel" name="patient_phone" id="patient_phone"
                        class="form-control" placeholder=" " required>
@@ -1126,11 +1113,10 @@ patient_rdv_template = r"""
         </form>
       {% endif %}
 
-      {# Panneau d'administration pour gérer les périodes désactivées #}
+      {# Panneau d'administration pour gérer les périodes désactivées (Reste inchangé) #}
       {% if role == 'admin' and show_admin_panel %}
         <div class="admin-panel card p-4 shadow-sm">
             <h4 class="mb-3"><i class="fas fa-calendar-times me-2"></i>Gérer les périodes d'indisponibilité</h4>
-
             {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
             <div class="alert-container">
@@ -1215,12 +1201,89 @@ patient_rdv_template = r"""
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded',()=>{
+
+  /* LOGIQUE POUR LA DATE DE NAISSANCE (3 SELECTS) */
+  const daySelect = document.getElementById('dob_day');
+  const monthSelect = document.getElementById('dob_month');
+  const yearSelect = document.getElementById('dob_year');
+  const hiddenDob = document.getElementById('patient_dob');
+
+  if(daySelect && monthSelect && yearSelect && hiddenDob) {
+      // 1. Remplir les Années (Année en cours -> 1900)
+      const currentYear = new Date().getFullYear();
+      for(let i = currentYear; i >= 1900; i--) {
+          let opt = document.createElement('option');
+          opt.value = i;
+          opt.textContent = i;
+          yearSelect.appendChild(opt);
+      }
+
+      // 2. Remplir les Mois
+      const monthNames = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+      monthNames.forEach((name, index) => {
+          let opt = document.createElement('option');
+          opt.value = index + 1; // 1-12
+          opt.textContent = name;
+          monthSelect.appendChild(opt);
+      });
+
+      // 3. Fonction pour mettre à jour les jours selon le mois et l'année
+      function updateDays() {
+          const year = parseInt(yearSelect.value);
+          const month = parseInt(monthSelect.value);
+          const currentDay = parseInt(daySelect.value);
+
+          // Si pas de mois sélectionné, on met 31 par défaut
+          let daysInMonth = 31;
+          if(year && month) {
+              // astuce: jour 0 du mois suivant = dernier jour du mois courant
+              daysInMonth = new Date(year, month, 0).getDate();
+          }
+
+          // Sauvegarder la sélection actuelle
+          daySelect.innerHTML = '<option value="">Jour</option>';
+          for(let i=1; i<=daysInMonth; i++) {
+              let opt = document.createElement('option');
+              let val = i < 10 ? '0'+i : i;
+              opt.value = val;
+              opt.textContent = i;
+              if(i === currentDay) opt.selected = true; // Maintenir la sélection si possible
+              daySelect.appendChild(opt);
+          }
+          updateHiddenDob();
+      }
+
+      // 4. Mettre à jour l'input caché
+      function updateHiddenDob() {
+          const y = yearSelect.value;
+          const m = monthSelect.value;
+          const d = daySelect.value;
+
+          if(y && m && d) {
+              // Format YYYY-MM-DD (ajout du 0 pour mois < 10)
+              const formattedMonth = m < 10 && m.length === 1 ? '0'+m : m;
+              hiddenDob.value = `${y}-${formattedMonth}-${d}`;
+          } else {
+              hiddenDob.value = '';
+          }
+      }
+
+      // Écouteurs d'événements
+      yearSelect.addEventListener('change', updateDays);
+      monthSelect.addEventListener('change', updateDays);
+      daySelect.addEventListener('change', updateHiddenDob);
+
+      // Initialisation des jours au chargement
+      updateDays();
+  }
+  /* FIN LOGIQUE DATE DE NAISSANCE */
+
   /* Navigation de l'assistant (Wizard navigation) */
   const step1=document.getElementById('step1'),step2=document.getElementById('step2');
   const s1c=document.getElementById('step1Circle'),s2c=document.getElementById('step2Circle'),line1=document.getElementById('line1');
 
   const toStep2Button = document.getElementById('toStep2');
-  if (toStep2Button) { // S'assurer que le bouton existe (il n'existera pas en mode admin)
+  if (toStep2Button) {
     toStep2Button.onclick=()=>{
       // Validation de base pour l'étape 1 avant de continuer
       const patientId = document.getElementById('patient_id').value;
@@ -1232,15 +1295,15 @@ document.addEventListener('DOMContentLoaded',()=>{
       const patientGenderO = document.getElementById('genderO').checked;
       const isGenderSelected = patientGenderM || patientGenderF || patientGenderO;
 
+      // Utiliser l'input caché pour la validation de la date
       const patientDob = document.getElementById('patient_dob').value;
       const patientPhone = document.getElementById('patient_phone').value;
-      const patientAnt = document.getElementById('patient_ant').value; // Antécédents peut être vide
 
       if (!patientId || !patientNom || !patientPrenom || !isGenderSelected || !patientDob || !patientPhone) {
         Swal.fire({
           icon: 'error',
           title: 'Champs manquants',
-          text: 'Veuillez remplir tous les champs obligatoires (ID, Nom, Prénom, Sexe, Date de naissance, Téléphone) avant de continuer.',
+          text: 'Veuillez remplir tous les champs obligatoires, y compris la date de naissance complète (Jour, Mois, Année).',
           confirmButtonText: 'OK'
         });
         return;
@@ -1252,7 +1315,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   }
 
   const backStep1Button = document.getElementById('backStep1');
-  if (backStep1Button) { // S'assurer que le bouton existe
+  if (backStep1Button) {
     backStep1Button.onclick=()=>{
       step2.classList.add('d-none');step1.classList.remove('d-none');
       s2c.classList.remove('active');line1.classList.remove('active');s1c.classList.add('active');
@@ -1264,26 +1327,23 @@ document.addEventListener('DOMContentLoaded',()=>{
       const rdvTimeSelect = document.getElementById('rdv_time');
       const medecinSelect = document.getElementById('medecin_select');
 
-      // Disable time slot selection if no doctor is chosen
       if (!selectedDoctorEmail) {
           rdvTimeSelect.innerHTML = '<option value="">Sélectionnez un médecin d\'abord</option>';
           rdvTimeSelect.disabled = true;
           return;
       }
-      rdvTimeSelect.disabled = false; // Enable once a doctor is selected
+      rdvTimeSelect.disabled = false;
 
-      const adminPrefix = window.location.pathname.split('/')[2]; // Extract admin_prefix from URL
+      const adminPrefix = window.location.pathname.split('/')[2];
 
       fetch(`/patient_rdv/${adminPrefix}/get_reserved_slots?date=${encodeURIComponent(selectedDate)}&medecin_email=${encodeURIComponent(selectedDoctorEmail)}`)
           .then(response => response.json())
           .then(data => {
-              const allTimeSlots = data.all_possible_slots; // Utiliser les créneaux possibles renvoyés par le backend
-
-              rdvTimeSelect.innerHTML = ''; // Clear current options
+              const allTimeSlots = data.all_possible_slots;
+              rdvTimeSelect.innerHTML = '';
               let hasSelectedOption = false;
 
               if (data.date_disabled) {
-                  // If the date is disabled, disable all slots and show message
                   const option = document.createElement('option');
                   option.value = '';
                   option.textContent = 'Indisponible';
@@ -1296,7 +1356,6 @@ document.addEventListener('DOMContentLoaded',()=>{
                       confirmButtonText: 'OK'
                   });
               } else {
-                  // Otherwise, populate normally and disable reserved slots
                   allTimeSlots.forEach(time => {
                       const option = document.createElement('option');
                       option.value = time;
@@ -1308,7 +1367,6 @@ document.addEventListener('DOMContentLoaded',()=>{
                   });
               }
 
-              // Add default 'Sélectionnez une heure' if no option is selected/pre-selected
               if (!hasSelectedOption && rdvTimeSelect.options.length > 0) {
                   const defaultOption = document.createElement('option');
                   defaultOption.value = '';
@@ -1325,20 +1383,16 @@ document.addEventListener('DOMContentLoaded',()=>{
           });
   }
 
-  // Event listener for RDV date change AND doctor selection change
   const rdvDateInput = document.getElementById('rdv_date');
   const medecinSelect = document.getElementById('medecin_select');
 
   if (rdvDateInput && medecinSelect) {
-      // Trigger update when date or doctor changes
       rdvDateInput.addEventListener('change', function() {
           updateTimeSlots(this.value, medecinSelect.value);
       });
       medecinSelect.addEventListener('change', function() {
           updateTimeSlots(rdvDateInput.value, this.value);
       });
-
-      // Initial call on page load to populate time slots based on initial date and (possibly empty) doctor selection
       updateTimeSlots(rdvDateInput.value, medecinSelect.value);
   }
 
@@ -1348,20 +1402,16 @@ document.addEventListener('DOMContentLoaded',()=>{
         const startDateInput = document.getElementById('start_date');
         const endDateInput = document.getElementById('end_date');
 
-        // Empêcher la date de fin d'être antérieure à la date de début
         startDateInput.addEventListener('change', function() {
             if (endDateInput.value < this.value) {
                 endDateInput.value = this.value;
             }
             endDateInput.min = this.value;
         });
-
-        // Appliquer la date minimale à la date de fin au chargement
         endDateInput.min = startDateInput.value;
     }
 });
 </script>
-{% include '_floating_assistant.html' %} 
 </body>
 </html>
 """

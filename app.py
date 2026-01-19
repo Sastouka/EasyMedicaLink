@@ -1,4 +1,4 @@
-# app.py (VERSION CORRIGÉE AVEC ACCÈS RESET PASSWORD)
+# app.py (VERSION CORRIGÉE AVEC ACCÈS PATIENT PUBLIC & RESET PASSWORD)
 import os
 from datetime import datetime, timedelta
 import webbrowser
@@ -102,16 +102,24 @@ def create_app():
             return
 
         # Accès public pour les blueprints ne nécessitant pas de connexion
-        if request.blueprint in ['developpeur_bp', 'ia_assistant_synapse']:
+        # AJOUT DE 'patient_rdv' ICI POUR L'ACCÈS PATIENT
+        if request.blueprint in ['developpeur_bp', 'ia_assistant_synapse', 'patient_rdv']:
+            # Cas spécial : Si c'est patient_rdv et qu'on n'est pas connecté, 
+            # on initialise les chemins avec un admin par défaut pour éviter le crash
+            if request.blueprint == 'patient_rdv' and 'admin_email' not in session:
+                utils.set_dynamic_base_dir("default_admin@example.com")
             return
         
         # Accès public pour des pages spécifiques (connexion, inscription, RESET PASSWORD)
         public_endpoints = [
             'login.login', 'login.register', 'login.complete_registration',
             'login.forgot_password', 
-            'login.reset_password_token',  # <--- CORRECTION ICI (C'était login.reset_password avant)
+            'login.reset_password_token',
             'activation.activation',
-            'activation.paypal_success', 'activation.paypal_cancel'
+            'activation.paypal_success', 'activation.paypal_cancel',
+            # --- AJOUTER CES DEUX LIGNES ---
+            'patient_rdv.patient_rdv_home',
+            'patient_rdv.get_reserved_slots_patient'
         ]
         if request.endpoint in public_endpoints:
             return
