@@ -1,4 +1,4 @@
-# activation.py – gestion licences & activation (VERSION CORRIGÉE ET ADAPTÉE)
+# activation.py – gestion licences & activation (TARIFS MIS À JOUR EURO)
 from __future__ import annotations
 import os, json, uuid, hashlib, socket, requests, calendar
 from datetime import date, timedelta
@@ -21,12 +21,12 @@ TRIAL_DAYS  = 7
 SECRET_SALT = "S2!eUrltaMnSecet25lrao" # Le sel reste une composante de la sécurité
 
 # ─────────────────────────────────────────────────────────────
-# 3. Générateur de clé (Logique MISE À JOUR : suppression de l'ID machine)
+# 3. Générateur de clé
 # ─────────────────────────────────────────────────────────────
 def _week_of_month(d: date) -> int:
     return ((d.day + calendar.monthrange(d.year, d.month)[0] - 1) // 7) + 1
 
-# NOTE: Cette fonction est conservée pour la compatibilité externe, mais son retour n'est plus utilisé pour la clé.
+# NOTE: Cette fonction est conservée pour la compatibilité externe.
 def get_hardware_id() -> str:
     return hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()[:16]
 
@@ -34,18 +34,13 @@ def generate_activation_key_for_user(
     admin_email: str, plan: str, ref: Optional[date] = None
 ) -> str:
     """
-    Génère une clé d'activation basée UNIQUMENT sur l'e-mail de l'admin et la date.
-    
-    :param admin_email: E-mail de l'administrateur.
-    :param plan: Type de plan (ex: 'web_1_mois').
-    :param ref: Date de référence pour l'activation.
-    :return: Clé d'activation formatée.
+    Génère une clé d'activation basée UNIQUEMENT sur l'e-mail de l'admin et la date.
     """
     ref = ref or date.today()
     plan_lower = plan.lower().strip()
     date_component = ""
 
-    # --- MODIFICATION : L'email remplace l'ID machine dans le payload ---
+    # L'email remplace l'ID machine dans le payload
     email_component = hashlib.sha256(admin_email.encode()).hexdigest()[:8]
 
     if plan_lower.startswith("essai"):
@@ -57,7 +52,6 @@ def generate_activation_key_for_user(
     elif "illimite" in plan_lower:
         date_component = ""
 
-    # Le payload utilise l'e-mail de l'admin à la place de l'ID machine
     payload = f"{email_component}{SECRET_SALT}{plan_lower}{date_component}"
     digest  = hashlib.sha256(payload.encode()).hexdigest().upper()[:16]
     return "-".join(digest[i:i+4] for i in range(0, 16, 4))
@@ -69,7 +63,6 @@ def _user() -> Optional[dict]:
     email = session.get("email")
     if not email:
         return None
-    # Correction de l'erreur d'attribut si login._user n'existe pas
     return login._user() if hasattr(login, '_user') else login.load_users().get(email)
 
 
@@ -91,7 +84,7 @@ def _ensure_placeholder(u: dict):
         _save_user(u)
         
 # ─────────────────────────────────────────────────────────────
-# 5. Validation licences (MISE À JOUR : Vérifie uniquement l'email de l'admin)
+# 5. Validation licences
 # ─────────────────────────────────────────────────────────────
 def _add_month(d: date) -> date:
     nxt_mo = d.month % 12 + 1
@@ -104,11 +97,10 @@ def _add_month(d: date) -> date:
 def check_activation() -> bool:
     u = _user()
     if not u:
-        # Si aucun utilisateur n'est connecté, l'activation ne peut pas être vérifiée
         return False
 
-    # Tous les comptes (y compris les secondaires) dépendent de la licence de l'administrateur
-    admin_owner_email = u.get("owner", u.get("email")) # L'admin est son propre 'owner' si 'owner' n'est pas défini.
+    # Tous les comptes dépendent de la licence de l'administrateur
+    admin_owner_email = u.get("owner", u.get("email"))
     
     all_users = login.load_users()
     admin_owner_user = all_users.get(admin_owner_email)
@@ -118,24 +110,21 @@ def check_activation() -> bool:
     
     admin_act = admin_owner_user["activation"]
     
-    # Début de la vérification de la licence de l'administrateur
     def _check_admin_activation_record(admin_email: str, activation_record: Dict) -> bool:
         plan = activation_record["plan"].lower()
         act_date = date.fromisoformat(activation_record["activation_date"])
         today = date.today()
         current_code = activation_record.get("activation_code")
         
-        # Le code d'essai par défaut est toujours valide pendant TRIAL_DAYS jours
         if plan.startswith("essai") and current_code == "0000-0000-0000-0000":
             return today <= act_date + timedelta(days=TRIAL_DAYS)
         
-        # GÉNÉRATION DE LA CLÉ ATTENDUE (UNIQUEMENT AVEC EMAIL ADMIN)
+        # GÉNÉRATION DE LA CLÉ ATTENDUE (AVEC EMAIL ADMIN)
         exp_code = generate_activation_key_for_user(admin_email, plan, act_date)
         
         if current_code != exp_code:
             return False
 
-        # Validation de la période
         if plan.startswith("essai"):
             return today <= act_date + timedelta(days=TRIAL_DAYS)
         if "1_mois" in plan:
@@ -150,7 +139,6 @@ def check_activation() -> bool:
             return True
         return False
 
-    # Assurez-vous que l'admin a un enregistrement d'activation s'il est l'utilisateur principal
     if u.get("role") == "admin":
         _ensure_placeholder(u)
 
@@ -160,7 +148,7 @@ def check_activation() -> bool:
 def update_activation(plan: str, code: str):
     u = _user()
     if not u: return
-    # L'activation est toujours mise à jour sur l'enregistrement de l'administrateur propriétaire
+    # Mise à jour sur l'enregistrement de l'admin
     admin_email = u.get("owner", u.get("email"))
     
     users = login.load_users()
@@ -177,7 +165,7 @@ def update_activation(plan: str, code: str):
 update_activation_after_payment = update_activation
 
 # ──────────────────────────
-# 6. PayPal (Inchangé)
+# 6. PayPal (MISE A JOUR DEVISE EUR)
 # ──────────────────────────
 PAYPAL_CLIENT_ID  = os.environ.get("PAYPAL_CLIENT_ID") or "AYPizBBNq1vp8WyvzvTHITGq9KoUUTXmzE0DBA7D_lWl5Ir6wEwVCB-gorvd1jgyX35ZqyURK6SMvps5"
 PAYPAL_SECRET     = os.environ.get("PAYPAL_SECRET")    or "EKSvwa_yK7ZYTuq45VP60dbRMzChbrko90EnhQsRzrMNZhqU2mHLti4_UTYV60ytY9uVZiAg7BoBlNno"
@@ -194,9 +182,10 @@ def get_paypal_access_token() -> str:
 def create_paypal_order(amount, return_url, cancel_url):
     token = get_paypal_access_token()
     hdr   = {"Authorization":f"Bearer {token}", "Content-Type":"application/json"}
+    # MODIFICATION ICI : currency_code passé à "EUR"
     body  = {
         "intent":"CAPTURE",
-        "purchase_units":[{"amount":{"currency_code":"USD","value":amount}}],
+        "purchase_units":[{"amount":{"currency_code":"EUR","value":amount}}],
         "application_context":{"return_url":return_url,"cancel_url":cancel_url}
     }
     r = requests.post(PAYPAL_ORDER_API, json=body, headers=hdr)
@@ -212,7 +201,7 @@ def capture_paypal_order(oid):
     return r.ok and r.json().get("status") == "COMPLETED"
 
 # ─────────────────────────────────────────────────────────────
-# 7. Templates (HTML condensé) (Inchangé)
+# 7. Templates (HTML condensé - PRIX MIS A JOUR)
 # ─────────────────────────────────────────────────────────────
 
 activation_template = """
@@ -295,7 +284,7 @@ body{
     font-size: 0.8rem;
 }
 .mono {font-family: 'Courier New', Courier, monospace; background-color: #e9ecef; padding: .2em .4em; border-radius: .3em;}
-.list-unstyled .fa-stack { font-size: 0.9em; } /* <-- AJOUT POUR RÉDUIRE LA TAILLE DES NUMÉROS */
+.list-unstyled .fa-stack { font-size: 0.9em; } 
 .activation-steps .step-number {
     background-image: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
 }
@@ -334,13 +323,13 @@ body{
           <div class='card-body d-flex flex-column p-4'>
             <p class='text-center'>Accès universel depuis n'importe quel navigateur. Idéal pour la mobilité.</p>
             <div class='text-center my-3'>
-                <span class="fs-1 fw-bold">$15</span>
+                <span class="fs-1 fw-bold">50 €</span>
                 <span class="text-muted">/ mois</span>
             </div>
             <button type='submit' class='btn btn-plan btn-web' onclick="setPlan('web_1_mois')">Choisir ce plan</button>
             <hr>
              <div class='text-center my-3'>
-                <span class="fs-1 fw-bold">$100</span>
+                <span class="fs-1 fw-bold">500 €</span>
                 <span class="text-muted">/ an</span>
             </div>
             <button type='submit' class='btn btn-plan btn-web' onclick="setPlan('web_1_an')">Abonnement Annuel</button>
@@ -355,13 +344,13 @@ body{
           <div class='card-body d-flex flex-column p-4'>
             <p class='text-center'>Performance maximale sur votre PC Windows, même hors ligne.</p>
             <div class='text-center my-3'>
-                <span class="fs-1 fw-bold">$50</span>
+                <span class="fs-1 fw-bold">50 €</span>
                 <span class="text-muted">/ an</span>
             </div>
             <button type='submit' class='btn btn-plan btn-local' onclick="setPlan('local_1_an')">Licence 1 An</button>
             <hr>
             <div class='text-center my-3'>
-                <span class="fs-1 fw-bold">$120</span>
+                <span class="fs-1 fw-bold">120 €</span>
                 <span class="text-muted">/ à vie</span>
             </div>
             <button type='submit' class='btn btn-plan btn-local' onclick="setPlan('local_illimite')">Licence Illimitée</button>
@@ -444,36 +433,29 @@ orders: Dict[str, tuple[str,str]] = {}
 def activation():
     login._set_login_paths()
 
-    # --- NOUVEAU : Redirection si l'utilisateur n'est pas connecté ---
     if "email" not in session:
         flash("Veuillez vous connecter pour accéder à la page d'activation.", "danger")
         return redirect(url_for("login.login"))
-    # --- FIN NOUVEAU ---
 
-    # Si la licence est DÉJÀ valide, on redirige vers l'accueil.
     if check_activation():
         return redirect(url_for("accueil.accueil"))
 
     user = login._user()
-    # Si check_activation a échoué, user est nécessairement valide ici, mais on s'assure d'avoir l'email admin
     admin_owner_email = user.get("owner", user.get("email", ""))
     
-    # Si l'utilisateur n'est pas son propre propriétaire (i.e. c'est un compte secondaire),
-    # seule la page de login est censée s'ouvrir, mais pour la robustesse, on vérifie.
     if admin_owner_email != session.get('admin_email'):
         flash("Seul le compte administrateur principal peut gérer l'activation ici.", "danger")
         return redirect(url_for("accueil.accueil"))
 
     hwid, today = get_hardware_id(), date.today()
     
-    # --- AJOUT : Recherche des fichiers exécutables ---
     static_folder = current_app.static_folder
     contents = os.listdir(static_folder) if os.path.exists(static_folder) else []
     win64 = next((f for f in contents if f.startswith('EasyMedicaLink-Win64.exe')), None)
     win32 = next((f for f in contents if f.startswith('EasyMedicaLink-Win32.exe')), None)
 
-    ctx = dict(machine_id=hwid, # Affiché pour information seulement
-               admin_owner_email=admin_owner_email, # NOUVEAU: Passé au template
+    ctx = dict(machine_id=hwid,
+               admin_owner_email=admin_owner_email,
                week_rank=_week_of_month(today),
                month_year=today.strftime("%m/%Y"),
                TRIAL_DAYS=TRIAL_DAYS,
@@ -484,17 +466,16 @@ def activation():
         plan = request.form["choix"]
         code = request.form.get("activation_code","").strip().upper()
         
-        # --- MODIFICATION : Nouveaux tarifs ---
+        # --- NOUVEAUX TARIFS EN EUROS ---
         tariffs = {
-            "web_1_mois": "15.00",
-            "web_1_an": "100.00",
+            "web_1_mois": "50.00",
+            "web_1_an": "500.00",
             "local_1_an": "50.00",
             "local_illimite": "120.00",
         }
 
         if plan in tariffs:
-            # Vérification de la clé manuelle (si fournie)
-            # UTILISATION DE L'EMAIL ADMIN ET NON DE L'ID MACHINE
+            # Vérification de la clé manuelle
             expected_paid_code = generate_activation_key_for_user(admin_owner_email, plan, today)
             
             if code and code == expected_paid_code:

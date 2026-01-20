@@ -1,9 +1,9 @@
 # login.py
 # ──────────────────────────────────────────────────────────────────────────────
-# Module d'authentification 100% LOCAL & RESPONSIVE - DESIGN PRO TURQUOISE
+# Module d'authentification HYBRIDE (LOCAL & CLOUD) - DESIGN PRO TURQUOISE
 # - Logique originale conservée (HMAC, Fichiers cachés, Champs spécifiques)
-# - Nouveau Design : Split Screen, Palette Turquoise, QR Code, Icône robuste
-# - AJOUT : Politique de Confidentialité & Support intégrés
+# - Design : Split Screen, Palette Turquoise, QR Code
+# - MISE A JOUR : Mention du support Cloud Google Firebase & Mode Local
 # ──────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -292,17 +292,17 @@ def render_auth_page(content_html, title="EasyMedicaLink", show_visual=True):
             </div>
             
             <h1 class="display-5 fw-bold mb-3">EasyMedicaLink</h1>
-            <p class="lead mb-4 opacity-75">La gestion clinique 100% Locale, Sécurisée et sans abonnement.</p>
+            <p class="lead mb-4 opacity-75">La gestion clinique flexible : <br><strong>Mode 100% Local</strong> ou <strong>Cloud Sécurisé</strong>.</p>
             
             <div id="reviewCarousel" class="carousel slide" data-bs-ride="carousel" data-bs-interval="4000">
                 <div class="carousel-inner">
-                    <div class="carousel-item active"><div class="testimonial-card"><div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div><p class="quote mb-0">"Une interface incroyablement intuitive."</p><div class="author">- Dr. Amine</div></div></div>
-                    <div class="carousel-item"><div class="testimonial-card"><div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div><p class="quote mb-0">"La facturation est devenue un jeu d'enfant."</p><div class="author">- Dr. Fatou</div></div></div>
+                    <div class="carousel-item active"><div class="testimonial-card"><div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div><p class="quote mb-0">"La synchronisation Cloud est parfaite pour mes déplacements."</p><div class="author">- Dr. Amine</div></div></div>
+                    <div class="carousel-item"><div class="testimonial-card"><div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div><p class="quote mb-0">"Je préfère le mode Local pour la confidentialité totale."</p><div class="author">- Dr. Fatou</div></div></div>
                     <div class="carousel-item"><div class="testimonial-card"><div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star-half-alt"></i></div><p class="quote mb-0">"Support technique très réactif."</p><div class="author">- Dr. Mamadou</div></div></div>
                 </div>
             </div>
             
-            <div class="mt-5 small opacity-50">&copy; EasyMedicaLink - 100% Offline</div>
+            <div class="mt-5 small opacity-50">&copy; EasyMedicaLink - Local & Online (Firebase)</div>
         </div>
     </div>
     """ if show_visual else ""
@@ -346,7 +346,7 @@ def render_auth_page(content_html, title="EasyMedicaLink", show_visual=True):
                         <div class="col-8">
                             <div class="d-flex gap-2 text-muted small mb-2 flex-wrap">
                                 <a href="https://www.easymedicalink.com" target="_blank" class="footer-link">Site Officiel</a> | 
-                                <a href="#" data-bs-toggle="modal" data-bs-target="#privacyModal" class="footer-link">Confidentialité</a> |
+                                <a href="#" data-bs-toggle="modal" data-bs-target="#privacyModal" class="footer-link">Confidentialité (Local/Cloud)</a> |
                                 <a href="#" data-bs-toggle="modal" data-bs-target="#supportModal" class="footer-link">Support</a>
                             </div>
                         </div>
@@ -378,18 +378,27 @@ def render_auth_page(content_html, title="EasyMedicaLink", show_visual=True):
       <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-0 shadow">
           <div class="modal-header">
-            <h5 class="modal-title"><i class="fas fa-lock me-2"></i>Confidentialité & Données Locales</h5>
+            <h5 class="modal-title"><i class="fas fa-lock me-2"></i>Stockage & Confidentialité</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-secondary" style="max-height: 60vh; overflow-y: auto;">
-            <h6 class="fw-bold text-dark"><i class="fas fa-hdd me-2"></i>1. Architecture 100% Locale</h6>
-            <p>Cette application fonctionne exclusivement en local sur votre machine ou votre réseau interne. <strong>Aucune donnée</strong> n'est transmise via internet vers des serveurs externes ou cloud.</p>
+            <h6 class="fw-bold text-dark"><i class="fas fa-server me-2"></i>1. Double Mode de Stockage (Au choix)</h6>
+            <p>EasyMedicalink vous offre une flexibilité totale selon vos besoins :</p>
+            <ul>
+                <li><strong>Mode Local (Offline) :</strong> Vos données sont stockées exclusivement sur votre ordinateur ou serveur local. Aucune connexion internet n'est requise.</li>
+                <li><strong>Mode En Ligne (Cloud) :</strong> Vos données sont hébergées de manière sécurisée sur le cloud via <strong>Google Firebase</strong>.</li>
+            </ul>
 
-            <h6 class="fw-bold text-dark mt-3"><i class="fas fa-user-shield me-2"></i>2. Pas de Collecte de Données</h6>
-            <p>EasyMedicalink ne collecte, ne stocke et n'analyse aucune de vos informations. Nous n'avons aucun accès à vos dossiers patients, votre chiffre d'affaires ou vos statistiques.</p>
+            <h6 class="fw-bold text-dark mt-3"><i class="fas fa-cloud me-2"></i>2. Sécurité Google Firebase</h6>
+            <p>Pour la version en ligne, nous utilisons l'infrastructure de classe mondiale de Google Firebase :</p>
+            <ul>
+                <li>Cryptage des données en transit et au repos.</li>
+                <li>Sauvegardes automatiques et redondance pour éviter toute perte de données.</li>
+                <li>Authentification sécurisée.</li>
+            </ul>
 
-            <h6 class="fw-bold text-dark mt-3"><i class="fas fa-database me-2"></i>3. Souveraineté Totale</h6>
-            <p>Vos données sont stockées physiquement sur votre ordinateur (Dossier MEDICALINK_DATA). Vous en êtes le seul propriétaire et le seul responsable. Pensez à effectuer des sauvegardes régulières.</p>
+            <h6 class="fw-bold text-dark mt-3"><i class="fas fa-hdd me-2"></i>3. Confidentialité en Local</h6>
+            <p>Si vous optez pour le mode Local, vos données restent dans le dossier <code>MEDICALINK_DATA</code> de votre machine. Vous en êtes le seul propriétaire et responsable (pensez aux sauvegardes).</p>
             
             <hr>
             <p class="small text-muted mb-0">Dernière mise à jour : {current_date_str}.</p>
