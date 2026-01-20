@@ -1,6 +1,5 @@
-# ia_assitant.py - v5.0 - Version JSON par utilisateur avec prompt amélioré
+# ia_assitant.py - v8.0 - VERSION FINALE (Design Original + Correctifs Locaux)
 import os
-import pathlib
 import datetime
 import pandas as pd
 import google.generativeai as genai
@@ -8,75 +7,94 @@ import json
 import uuid
 import hashlib
 import threading
+from werkzeug.utils import secure_filename
 
 from flask import (
     Blueprint, render_template_string, session, redirect,
     url_for, flash, request, jsonify, Response
 )
-from werkzeug.utils import secure_filename
 
 # --- Imports des modules locaux ---
 import utils
 import login
-import theme
+import theme  # On garde l'import, mais on gère l'absence de pwa_head manuellement
 
 # --- Configuration et Initialisation ---
 ia_assitant_bp = Blueprint('ia_assitant', __name__, url_prefix='/ia_assitant')
 
-# --- Fonctions de gestion des fichiers JSON ---
+# ==============================================================================
+# 1. CONFIGURATION API GEMINI (Lecture email.json sécurisée)
+# ==============================================================================
+def configure_genai():
+    """Charge la clé API depuis email.json ou l'environnement."""
+    api_key = None
+    
+    # 1. Essai lecture fichier email.json
+    try:
+        basedir = os.path.abspath(os.path.dirname(__file__))
+        config_path = os.path.join(basedir, 'email.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                candidate = data.get("GOOGLE_API_KEY")
+                if candidate and "AIza" in candidate:
+                    api_key = candidate
+                    print("✅ IA: Clé chargée depuis email.json")
+    except Exception as e:
+        print(f"⚠️ IA: Erreur lecture email.json: {e}")
+
+    # 2. Fallback environnement
+    if not api_key:
+        api_key = os.environ.get("GOOGLE_API_KEY")
+
+    if api_key and "AIza" in api_key:
+        try:
+            genai.configure(api_key=api_key)
+            return genai.GenerativeModel('gemini-flash-latest')
+        except Exception as e:
+            print(f"❌ IA: Erreur config: {e}")
+            return None
+    else:
+        print("❌ IA: Aucune clé API valide trouvée.")
+        return None
+
+model = configure_genai()
+
+# ==============================================================================
+# 2. GESTION DES DONNÉES JSON
+# ==============================================================================
 JSON_CONVERSATIONS_DIR = None
-json_lock = threading.Lock() # Verrou pour éviter les conflits d'écriture
+json_lock = threading.Lock()
 
 def _initialize_json_storage():
-    """Initialise le chemin de stockage des conversations JSON."""
     global JSON_CONVERSATIONS_DIR
     if utils.DYNAMIC_BASE_DIR:
         JSON_CONVERSATIONS_DIR = os.path.join(utils.DYNAMIC_BASE_DIR, "IA_Conversations")
         os.makedirs(JSON_CONVERSATIONS_DIR, exist_ok=True)
 
 def _get_user_conversations_path(user_email: str) -> str:
-    """Génère un nom de fichier sécurisé à partir de l'email de l'utilisateur."""
-    if not JSON_CONVERSATIONS_DIR:
-        _initialize_json_storage()
-    # Hacher l'email pour créer un nom de fichier valide et anonyme
+    if not JSON_CONVERSATIONS_DIR: _initialize_json_storage()
     email_hash = hashlib.sha1(user_email.encode()).hexdigest()
     return os.path.join(JSON_CONVERSATIONS_DIR, f"{email_hash}.json")
 
 def load_user_conversations(user_email: str) -> list:
-    """Charge les conversations d'un utilisateur depuis son fichier JSON."""
     filepath = _get_user_conversations_path(user_email)
     with json_lock:
-        if not os.path.exists(filepath):
-            return []
+        if not os.path.exists(filepath): return []
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
-                if os.path.getsize(filepath) == 0:
-                    return []
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            return []
+                return json.load(f) if os.path.getsize(filepath) > 0 else []
+        except: return []
 
 def save_user_conversations(user_email: str, conversations: list):
-    """Sauvegarde la liste complète des conversations d'un utilisateur."""
     filepath = _get_user_conversations_path(user_email)
     with json_lock:
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(conversations, f, indent=2, ensure_ascii=False)
 
-# --- Configuration de l'API Gemini ---
-API_KEY = os.environ.get("GOOGLE_API_KEY", "VOTRE_CLE_API") 
-if API_KEY == "VOTRE_CLE_API":
-    print("AVERTISSEMENT: La clé API Google n'est pas configurée.")
-
-try:
-    genai.configure(api_key=API_KEY)
-    # MODIFICATION : Utilisation explicite du modèle Flash
-    model = genai.GenerativeModel('gemini-flash-latest') 
-except Exception as e:
-    print(f"Erreur critique lors de la configuration de l'API Gemini : {e}")
-    model = None
-
-# --- Template de l'Interface Utilisateur ---
+# ==============================================================================
+# 3. TEMPLATE HTML (VOTRE DESIGN EXACT)
+# ==============================================================================
 ia_assitant_template = """
 <!DOCTYPE html>
 <html lang="fr">
@@ -509,10 +527,24 @@ def home_ia_assitant():
     if not logged_in_full_name:
         logged_in_full_name = None
 
+    # --- CORRECTIF PWA_HEAD LOCAL (Evite le crash si theme.py n'a pas la fonction) ---
+    def local_pwa_head():
+        return """
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <meta name="theme-color" content="#1967d2">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="manifest" href="/manifest.json">
+        """
+    
+    # On utilise theme.pwa_head s'il existe, sinon on utilise la version locale
+    pwa_func = getattr(theme, 'pwa_head', local_pwa_head)
+
+    # On injecte la fonction pwa_head dans le contexte du template
     return render_template_string(
         ia_assitant_template, 
         logged_in_doctor_name=logged_in_full_name,
-        config=config
+        config=config,
+        pwa_head=pwa_func
     )
 
 @ia_assitant_bp.route('/conversations', methods=['GET'])
@@ -558,7 +590,7 @@ def delete_conversation(conv_id):
 def chat_stream():
     """ Gère l'envoi de message et le streaming de la réponse. """
     if 'email' not in session: return jsonify({"error": "Non autorisé"}), 401
-    if not model: return jsonify({"error": "Modèle IA non initialisé"}), 500
+    if not model: return jsonify({"error": "L'IA n'est pas disponible (Clé API invalide ou librairie obsolète)."}), 500
 
     _initialize_json_storage()
     user_email = session['email']
@@ -589,8 +621,10 @@ def chat_stream():
     - **Confidentialité :** Ne jamais demander, stocker ou utiliser les informations personnelles d'un patient.
     - **Analyse de Fichiers :** Si tu analyses un fichier image fourni par l'utilisateur, mentionne-le en utilisant la balise `[thumbnail:nom_exact_du_fichier.ext]`.
     """
-    prompt_parts.append(system_instruction)
-
+    
+    # Correction : Pour gemini-1.5-flash, le system instruction se passe à la config, pas dans le prompt
+    # Ici, on l'ajoute au début du contexte pour s'assurer qu'il est pris en compte
+    
     try:
         for file in files:
             secure_name = secure_filename(file.filename)
@@ -599,9 +633,13 @@ def chat_stream():
             temp_files.append(temp_path)
             
             if secure_name.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(temp_path)
-                prompt_parts.append(f"Analyse du fichier Excel '{secure_name}':\n{df.to_string()}")
+                try:
+                    df = pd.read_excel(temp_path)
+                    prompt_parts.append(f"Analyse du fichier Excel '{secure_name}':\n{df.to_string()}")
+                except Exception as e:
+                    prompt_parts.append(f"Impossible de lire le fichier Excel {secure_name}: {e}")
             else:
+                # Upload vers Gemini File API
                 uploaded_file = genai.upload_file(path=temp_path)
                 prompt_parts.append(uploaded_file)
             user_message_content.append(f"Fichier joint: {secure_name}")
@@ -627,13 +665,28 @@ def chat_stream():
         user_msg = {'role': 'user', 'content': "\n".join(user_message_content)}
         current_conv['messages'].append(user_msg)
 
-        chat_history = [{'role': m['role'], 'parts': [part for part in m['content'].split('\n') if part]} for m in current_conv['messages'][:-1]]
+        # Préparation de l'historique pour l'API
+        # Note: Gemini 1.5 gère l'historique différemment, ici on reconstruit un historique simple
+        chat_history = []
+        for m in current_conv['messages'][:-1]:
+            # On filtre le contenu pour s'assurer qu'il est valide (pas vide)
+            parts = [part for part in m['content'].split('\n') if part]
+            if parts:
+                chat_history.append({'role': m['role'], 'parts': parts})
         
+        # Ajout du System Instruction via history si possible ou premier message
+        if not chat_history:
+             chat_history = [] # On laisse le modèle gérer le system instruction via le context initial si besoin, ou on l'envoie dans le premier prompt
+
         chat_session = model.start_chat(history=chat_history)
         
         full_response_text = ""
         try:
-            response_stream = chat_session.send_message(prompt_parts, stream=True)
+            # On envoie le system instruction avec la première requête si l'historique est vide, ou on l'ajoute au prompt
+            final_prompt = [system_instruction] + prompt_parts if not chat_history else prompt_parts
+            
+            response_stream = chat_session.send_message(final_prompt, stream=True)
+            
             def generate_chunks():
                 nonlocal full_response_text
                 for chunk in response_stream:
@@ -645,8 +698,12 @@ def chat_stream():
             full_response_text = "".join(response_chunks)
 
         except Exception as e:
-            print(f"Erreur pendant l'appel à l'API Gemini: {e}")
-            full_response_text = f"**Erreur de communication avec l'assistant IA.**\nDétails: {str(e)}"
+            err_msg = str(e)
+            print(f"Erreur pendant l'appel à l'API Gemini: {err_msg}")
+            if "404" in err_msg:
+                 full_response_text = "**Erreur Critique : Modèle non trouvé.**\nVeuillez mettre à jour la librairie Python : `pip install --upgrade google-generativeai`"
+            else:
+                 full_response_text = f"**Erreur de communication avec l'assistant IA.**\nDétails: {err_msg}"
 
         ai_msg = {'role': 'model', 'content': full_response_text}
         current_conv['messages'].append(ai_msg)
