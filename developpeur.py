@@ -35,10 +35,10 @@ TRIAL_DAYS = activation.TRIAL_DAYS
 
 PLANS = [
     (f"essai_{TRIAL_DAYS}jours", f"Essai {TRIAL_DAYS} jours"),
-    ("web_1_mois", "Web - 1 Mois (15$)\n"),
-    ("web_1_an", "Web - 1 An (100$)"),
-    ("local_1_an", "Local Windows - 1 An (50$)"),
-    ("local_illimite", "Local Windows - Illimité (120$)")
+    ("web_1_mois", "Web - 1 Mois (50€)\n"),
+    ("web_1_an", "Web - 1 An (500€)"),
+    ("local_1_an", "Local Windows - 1 An (50€)"),
+    ("local_illimite", "Local Windows - Illimité (120€)")
 ]
 
 KEY_DB: Optional[Path] = None
